@@ -1,0 +1,20 @@
+{
+  "name": "aulaciencias",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Aplicacion web para reservas de turnos de aulaCiencias.",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace server",
+    "build": "npm run build --workspace client && npm run build --workspace server",
+    "db:migrate": "npm run db:migrate --workspace server",
+    "db:seed": "npm run db:seed --workspace server",
+    "start": "npm run start --workspace server"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
