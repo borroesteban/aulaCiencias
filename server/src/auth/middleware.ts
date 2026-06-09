@@ -19,6 +19,10 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       .select({
         id: users.id,
         email: users.email,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        dni: users.dni,
+        phone: users.phone,
         role: users.role,
         isActive: users.isActive,
       })
@@ -35,6 +39,40 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   } catch {
     return res.status(401).json({ error: "UNAUTHENTICATED" });
   }
+}
+
+export async function attachOptionalUser(req: Request, _res: Response, next: NextFunction) {
+  const token = req.cookies?.[authCookieName];
+
+  if (!token) {
+    return next();
+  }
+
+  try {
+    const sessionUser = verifySessionToken(token);
+    const [user] = await getDb()
+      .select({
+        id: users.id,
+        email: users.email,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        dni: users.dni,
+        phone: users.phone,
+        role: users.role,
+        isActive: users.isActive,
+      })
+      .from(users)
+      .where(eq(users.id, sessionUser.id))
+      .limit(1);
+
+    if (user?.isActive) {
+      req.user = user;
+    }
+  } catch {
+    req.user = undefined;
+  }
+
+  return next();
 }
 
 export function requireRole(roles: UserRole[]) {

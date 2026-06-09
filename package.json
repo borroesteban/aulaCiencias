@@ -12,6 +12,8 @@
     "build": "npm run build --workspace client && npm run build --workspace server",
     "db:migrate": "npm run db:migrate --workspace server",
     "db:seed": "npm run db:seed --workspace server",
+    "docker:up": "docker compose up --build",
+    "docker:down": "docker compose down",
     "start": "npm run start --workspace server"
   },
   "engines": {

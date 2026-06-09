@@ -1,0 +1,2 @@
+ALTER TABLE app_settings
+  ADD COLUMN IF NOT EXISTS subject_window_items text;

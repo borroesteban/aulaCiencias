@@ -36,6 +36,10 @@ export function verifySessionToken(token: string): AuthUser {
   return {
     id: payload.sub,
     email: payload.email,
+    firstName: null,
+    lastName: null,
+    dni: null,
+    phone: null,
     role: payload.role,
     isActive: payload.isActive,
   };

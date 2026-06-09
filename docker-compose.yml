@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: aulaciencias_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: aulaciencias
+      POSTGRES_USER: aulaciencias_user
+      POSTGRES_PASSWORD: aulaciencias_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - aulaciencias_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aulaciencias_user -d aulaciencias"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aulaciencias_app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgres://aulaciencias_user:aulaciencias_password@postgres:5432/aulaciencias
+      JWT_SECRET: docker_local_change_this_secret
+      AUTH_COOKIE_SECURE: "false"
+      SUPERADMIN_EMAIL: admin@aulaciencias.local
+      SUPERADMIN_PASSWORD: admin123456
+      DB_POOL_MAX: 3
+    ports:
+      - "8080:3000"
+
+volumes:
+  aulaciencias_postgres_data:

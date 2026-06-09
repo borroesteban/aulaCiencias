@@ -15,6 +15,15 @@ const loginSchema = z.object({
   password: z.string().min(1).max(256),
 });
 
+const registerSchema = z.object({
+  email: z.string().trim().email().max(320).transform((email) => email.toLowerCase()),
+  password: z.string().min(8).max(256),
+  firstName: z.string().trim().min(1).max(120),
+  lastName: z.string().trim().min(1).max(120),
+  dni: z.string().trim().min(1).max(30),
+  phone: z.string().trim().max(80).optional().nullable(),
+});
+
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1).max(256),
   newPassword: z.string().min(8).max(256),
@@ -30,6 +39,45 @@ const loginRateLimit = rateLimit({
 
 export const authRouter = Router();
 
+authRouter.post("/register", loginRateLimit, validateBody(registerSchema), async (req, res, next) => {
+  try {
+    const { email, password, firstName, lastName, dni, phone } = req.body as z.infer<typeof registerSchema>;
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    const [user] = await getDb()
+      .insert(users)
+      .values({
+        email,
+        passwordHash,
+        firstName,
+        lastName,
+        dni,
+        phone: phone || null,
+        role: "USER",
+        isActive: true,
+      })
+      .returning({
+        id: users.id,
+        email: users.email,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        dni: users.dni,
+        phone: users.phone,
+        role: users.role,
+        isActive: users.isActive,
+      });
+
+    res.cookie(authCookieName, signSessionToken(user), getAuthCookieOptions());
+    return res.status(201).json({ user });
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "23505") {
+      return res.status(409).json({ error: "EMAIL_ALREADY_EXISTS" });
+    }
+
+    return next(error);
+  }
+});
+
 authRouter.post("/login", loginRateLimit, validateBody(loginSchema), async (req, res, next) => {
   try {
     const { email, password } = req.body as z.infer<typeof loginSchema>;
@@ -38,6 +86,10 @@ authRouter.post("/login", loginRateLimit, validateBody(loginSchema), async (req,
         id: users.id,
         email: users.email,
         passwordHash: users.passwordHash,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        dni: users.dni,
+        phone: users.phone,
         role: users.role,
         isActive: users.isActive,
       })
@@ -58,6 +110,10 @@ authRouter.post("/login", loginRateLimit, validateBody(loginSchema), async (req,
     const authUser = {
       id: user.id,
       email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      dni: user.dni,
+      phone: user.phone,
       role: user.role,
       isActive: user.isActive,
     };
