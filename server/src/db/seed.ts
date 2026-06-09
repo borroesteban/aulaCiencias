@@ -9,6 +9,14 @@ import {
   contentBlocks,
   downloadableCategories,
   downloadableContents,
+  academicPrograms,
+  glossaryArticleLevels,
+  glossaryArticleRelatedTopics,
+  glossaryArticleSources,
+  glossaryArticles,
+  glossaryTopics,
+  institutions,
+  programTopics,
   schools,
   subjectHighlights,
   subjects,
@@ -22,6 +30,14 @@ function normalizeSeedKey(value: string) {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
 }
+
+function seedSlug(value: string) {
+  return normalizeSeedKey(value)
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+const verifiedAt = "2026-06-09";
 
 const initialDownloadableCategories = [
   { name: "Biología", slug: "biologia" },
@@ -90,11 +106,102 @@ const initialBookingTimeSlots = [
   "19:00",
 ];
 
+const initialInstitutions = [
+  {
+    name: "UADER FCyT - Sede Gualeguaychú",
+    type: "universidad",
+    description: "Sede Gualeguaychú de la Facultad de Ciencia y Tecnología de la Universidad Autónoma de Entre Ríos.",
+    address: "Blvr. Montana y Nogoyá",
+    city: "Gualeguaychú",
+    phone: null,
+    email: "fcyt_gualeguaychu@uader.edu.ar",
+    website: "https://fcyt.uader.edu.ar/sede-y-extension-aul/gualeguaychu/",
+    latitude: null,
+    longitude: null,
+    sourceName: "UADER FCyT - Sede Gualeguaychú",
+    sourceUrl: "https://fcyt.uader.edu.ar/sede-y-extension-aul/gualeguaychu/",
+    lastVerifiedAt: verifiedAt,
+    programs: [
+      {
+        name: "Tecnicatura Universitaria en Gestión Ambiental",
+        academicLevel: "tecnicatura",
+        titleGranted: "Técnico/a Universitario/a en Gestión Ambiental",
+        duration: "3 años",
+        modality: "presencial",
+        description: "Carrera orientada a problemáticas ambientales, territorio, gestión y ciencias naturales.",
+        topics: ["Biología", "Química", "Ambiente", "Geografía", "Gestión ambiental"],
+      },
+      {
+        name: "Licenciatura en Gestión Ambiental",
+        academicLevel: "licenciatura",
+        titleGranted: "Licenciado/a en Gestión Ambiental",
+        duration: "4 años",
+        modality: "presencial",
+        description: "Formación de grado en gestión ambiental con base científica y territorial.",
+        topics: ["Biología", "Química", "Ambiente", "Geografía", "Estadística"],
+      },
+    ],
+  },
+  {
+    name: "UCU - Centro Regional Gualeguaychú",
+    type: "universidad",
+    description: "Centro Regional Gualeguaychú de la Universidad de Concepción del Uruguay.",
+    address: "25 de Mayo 1312",
+    city: "Gualeguaychú",
+    phone: "03446-426852",
+    email: "recepciongchu@ucu.edu.ar",
+    website: "https://ucu.edu.ar/carreras/",
+    latitude: null,
+    longitude: null,
+    sourceName: "UCU carreras e información institucional",
+    sourceUrl: "https://ucu.edu.ar/carreras/",
+    lastVerifiedAt: verifiedAt,
+    programs: [
+      {
+        name: "Abogacía",
+        academicLevel: "grado",
+        titleGranted: "Abogado/a",
+        duration: "5 años",
+        modality: "presencial",
+        description: "Carrera de grado del área jurídica disponible en Gualeguaychú según oferta UCU.",
+        topics: ["Derecho", "Lectura comprensiva", "Historia", "Ciudadanía"],
+      },
+      {
+        name: "Licenciatura en Comercio Internacional",
+        academicLevel: "licenciatura",
+        titleGranted: "Licenciado/a en Comercio Internacional",
+        duration: "4 años",
+        modality: "presencial",
+        description: "Formación en comercio, economía, gestión y relaciones internacionales.",
+        topics: ["Matemática", "Economía", "Inglés", "Estadística"],
+      },
+      {
+        name: "Licenciatura en Comercialización y Gestión de Negocios",
+        academicLevel: "licenciatura",
+        titleGranted: "Licenciado/a en Comercialización y Gestión de Negocios",
+        duration: "4 años",
+        modality: "presencial",
+        description: "Formación en negocios, marketing, gestión y análisis comercial.",
+        topics: ["Matemática", "Economía", "Comunicación", "Estadística"],
+      },
+      {
+        name: "Profesorado Universitario de Educación Física",
+        academicLevel: "profesorado",
+        titleGranted: "Profesor/a Universitario/a de Educación Física",
+        duration: "4 años",
+        modality: "presencial",
+        description: "Profesorado universitario orientado a educación física y ciencias del movimiento.",
+        topics: ["Biología", "Anatomía", "Salud", "Pedagogía"],
+      },
+    ],
+  },
+];
+
 const initialContentBlocks = [
   {
     key: "home.subjectCarousel",
-    title: "Campos del conocimiento",
-    body: "Placeholder editable para mostrar materias, definiciones breves y vínculos con profesiones reales.",
+    title: "Ventanas de glosario",
+    body: "Materias y conceptos con definiciones breves, artículos completos y vínculos con profesiones reales.",
     imageUrl: "https://images.unsplash.com/photo-1507413245164-6160d8298b31?auto=format&fit=crop&w=1200&q=80",
     displayOrder: 10,
   },
@@ -115,9 +222,9 @@ const initialContentBlocks = [
   },
   {
     key: "home.topics",
-    eyebrow: "Temarios disponibles",
-    title: "Elegir qué aprender, sin vueltas",
-    body: "Placeholder para ordenar temas por materia, año, modalidad y nivel.",
+    eyebrow: "Orientación académica",
+    title: "Elegir qué estudiar",
+    body: "Carreras e instituciones de Gualeguaychú organizadas por nivel, intereses y fuentes verificables.",
     imageUrl: "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?auto=format&fit=crop&w=1200&q=80",
     displayOrder: 40,
   },
@@ -646,7 +753,17 @@ async function seed() {
       "https://images.unsplash.com/photo-1581093458791-9d15482442f6?auto=format&fit=crop&w=1200&q=80",
       "https://images.unsplash.com/photo-1635070041078-e363dbe005cb?auto=format&fit=crop&w=1200&q=80",
     ].join("\n"),
-    subjectWindowIntervalSeconds: 5,
+    educationalBackgroundImages: [
+      "https://images.unsplash.com/photo-1509062522246-3755977927d7?auto=format&fit=crop&w=3200&q=82",
+      "https://images.unsplash.com/photo-1513258496099-48168024aec0?auto=format&fit=crop&w=3200&q=82",
+      "https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?auto=format&fit=crop&w=3200&q=82",
+      "https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?auto=format&fit=crop&w=3200&q=82",
+    ].join("\n"),
+    subjectWindowIntervalSeconds: 3,
+    subjectWindowRotationSeconds: "1.0",
+    subjectWindowPauseSeconds: "2.0",
+    subjectWindowSizeValue: "140",
+    subjectWindowSizeUnit: "px",
     subjectWindowItems: null,
     whatsappNumber: null,
     siteTitle: "aulaCiencias",
@@ -664,6 +781,7 @@ async function seed() {
       .set({
         heroImageUrl: sql`COALESCE(NULLIF(${appSettings.heroImageUrl}, ''), ${placeholderSettings.heroImageUrl})`,
         carouselImages: sql`COALESCE(NULLIF(${appSettings.carouselImages}, ''), ${placeholderSettings.carouselImages})`,
+        educationalBackgroundImages: sql`COALESCE(NULLIF(${appSettings.educationalBackgroundImages}, ''), ${placeholderSettings.educationalBackgroundImages})`,
         heroEyebrow: sql`COALESCE(NULLIF(${appSettings.heroEyebrow}, ''), ${placeholderSettings.heroEyebrow})`,
         heroTitle: sql`COALESCE(NULLIF(${appSettings.heroTitle}, ''), ${placeholderSettings.heroTitle})`,
         heroSubtitle: sql`COALESCE(NULLIF(${appSettings.heroSubtitle}, ''), ${placeholderSettings.heroSubtitle})`,
@@ -789,6 +907,133 @@ async function seed() {
       });
   }
 
+  const glossaryArticlesBySlug = new Map<string, string>();
+
+  for (const highlight of initialSubjectHighlights) {
+    const [topic] = await db
+      .insert(glossaryTopics)
+      .values({
+        title: highlight.title,
+        slug: highlight.slug,
+        shortDescription: highlight.definition,
+        imageUrl: highlight.imageUrl,
+        displayOrder: highlight.displayOrder,
+        isActive: true,
+      })
+      .onConflictDoUpdate({
+        target: glossaryTopics.slug,
+        set: {
+          title: highlight.title,
+          shortDescription: highlight.definition,
+          imageUrl: highlight.imageUrl,
+          displayOrder: highlight.displayOrder,
+          isActive: true,
+        },
+      })
+      .returning({ id: glossaryTopics.id, slug: glossaryTopics.slug });
+
+    const articleValues = {
+      topicId: topic.id,
+      title: highlight.title,
+      summary: highlight.definition,
+      fullDefinition: `${highlight.definition}\n\nEste artículo funciona como punto de partida para estudiar el concepto, reconocer sus usos y conectarlo con temas escolares y profesionales.`,
+      introduction: `Antes de estudiar ${highlight.title}, conviene ubicarlo dentro de las ciencias y pensar qué problemas ayuda a resolver.`,
+      body: `Ideas clave: ${highlight.keywords}. Profesiones relacionadas: ${highlight.professions}. Trabajos comunes: ${highlight.jobs}.`,
+      examples: highlight.keywords,
+      commonMistakes: "Memorizar palabras sin relacionarlas con ejemplos; confundir definiciones breves con comprensión profunda.",
+      applications: highlight.jobs,
+      relatedConcepts: highlight.keywords,
+      conclusion: `${highlight.title} se entiende mejor cuando se lo conecta con ejemplos, imágenes, problemas y aplicaciones reales.`,
+      seoTitle: `${highlight.title} - Glosario aulaCiencias`,
+      seoDescription: highlight.definition,
+      keywords: highlight.keywords,
+      ogImageUrl: highlight.imageUrl,
+      isActive: true,
+    };
+    const [existingArticle] = await db
+      .select({ id: glossaryArticles.id })
+      .from(glossaryArticles)
+      .where(eq(glossaryArticles.topicId, topic.id))
+      .limit(1);
+    const [article] = existingArticle
+      ? await db
+          .update(glossaryArticles)
+          .set(articleValues)
+          .where(eq(glossaryArticles.id, existingArticle.id))
+          .returning({ id: glossaryArticles.id })
+      : await db.insert(glossaryArticles).values(articleValues).returning({ id: glossaryArticles.id });
+
+    glossaryArticlesBySlug.set(topic.slug, article.id);
+
+    const levels = [
+      ["Nivel inicial / primaria", `Una forma simple de entender ${highlight.title}: ${highlight.definition}`],
+      ["Secundario básico", `En secundaria, ${highlight.title} se estudia mediante vocabulario, ejemplos y problemas guiados.`],
+      ["Secundario avanzado", `En un nivel avanzado se analizan relaciones, modelos, evidencias y aplicaciones de ${highlight.title}.`],
+      ["Terciario / universitario introductorio", `En estudios superiores, ${highlight.title} se conecta con métodos, datos y decisiones profesionales.`],
+    ];
+
+    const [existingLevel] = await db
+      .select({ id: glossaryArticleLevels.id })
+      .from(glossaryArticleLevels)
+      .where(eq(glossaryArticleLevels.articleId, article.id))
+      .limit(1);
+    if (!existingLevel) {
+      for (const [index, level] of levels.entries()) {
+        await db.insert(glossaryArticleLevels).values({
+          articleId: article.id,
+          levelName: level[0],
+          levelOrder: index + 1,
+          content: level[1],
+          examples: highlight.keywords,
+          isActive: true,
+        });
+      }
+    }
+
+    const [existingSource] = await db
+      .select({ id: glossaryArticleSources.id })
+      .from(glossaryArticleSources)
+      .where(eq(glossaryArticleSources.articleId, article.id))
+      .limit(1);
+    if (!existingSource) {
+      await db.insert(glossaryArticleSources).values({
+        articleId: article.id,
+        title: "Contenido inicial aulaCiencias derivado de destacados existentes",
+        institution: "aulaCiencias",
+        sourceType: "seed interno",
+        accessDate: verifiedAt,
+        displayOrder: 1,
+        isActive: true,
+      });
+    }
+  }
+
+  const articleIds = Array.from(glossaryArticlesBySlug.values());
+  for (const [index, articleId] of articleIds.entries()) {
+    const relatedArticleId = articleIds[(index + 1) % articleIds.length];
+
+    if (articleId !== relatedArticleId) {
+      const [existingRelation] = await db
+        .select({ id: glossaryArticleRelatedTopics.id })
+        .from(glossaryArticleRelatedTopics)
+        .where(
+          and(
+            eq(glossaryArticleRelatedTopics.articleId, articleId),
+            eq(glossaryArticleRelatedTopics.relatedArticleId, relatedArticleId),
+          ),
+        )
+        .limit(1);
+
+      if (!existingRelation) {
+        await db.insert(glossaryArticleRelatedTopics).values({
+          articleId,
+          relatedArticleId,
+          relationLabel: "Tema relacionado",
+        });
+      }
+    }
+  }
+
   for (const topic of commonTopics) {
     const subject = topic.subject
       ? subjectByName.get(topic.subject) ?? subjectByName.get(normalizeSeedKey(topic.subject))
@@ -827,6 +1072,73 @@ async function seed() {
       continue;
     } else {
       await db.insert(schools).values(values);
+    }
+  }
+
+  for (const institution of initialInstitutions) {
+    const { programs, ...institutionValues } = institution;
+    const [existingInstitution] = await db
+      .select({ id: institutions.id })
+      .from(institutions)
+      .where(eq(institutions.name, institution.name))
+      .limit(1);
+    const [savedInstitution] = existingInstitution
+      ? await db
+          .update(institutions)
+          .set({ ...institutionValues, isActive: true })
+          .where(eq(institutions.id, existingInstitution.id))
+          .returning({ id: institutions.id })
+      : await db.insert(institutions).values({ ...institutionValues, isActive: true }).returning({ id: institutions.id });
+
+    for (const program of programs) {
+      const { topics: programTopicNames, ...programValues } = program;
+      const [existingProgram] = await db
+        .select({ id: academicPrograms.id })
+        .from(academicPrograms)
+        .where(and(eq(academicPrograms.institutionId, savedInstitution.id), eq(academicPrograms.name, program.name)))
+        .limit(1);
+      const [savedProgram] = existingProgram
+        ? await db
+            .update(academicPrograms)
+            .set({
+              ...programValues,
+              institutionId: savedInstitution.id,
+              sourceName: institution.sourceName,
+              sourceUrl: institution.sourceUrl,
+              lastVerifiedAt: verifiedAt,
+              isActive: true,
+            })
+            .where(eq(academicPrograms.id, existingProgram.id))
+            .returning({ id: academicPrograms.id })
+        : await db
+            .insert(academicPrograms)
+            .values({
+              ...programValues,
+              institutionId: savedInstitution.id,
+              sourceName: institution.sourceName,
+              sourceUrl: institution.sourceUrl,
+              lastVerifiedAt: verifiedAt,
+              isActive: true,
+            })
+            .returning({ id: academicPrograms.id });
+
+      for (const [index, topicName] of programTopicNames.entries()) {
+        const normalizedName = seedSlug(topicName);
+        const [existingProgramTopic] = await db
+          .select({ id: programTopics.id })
+          .from(programTopics)
+          .where(and(eq(programTopics.programId, savedProgram.id), eq(programTopics.normalizedName, normalizedName)))
+          .limit(1);
+
+        if (!existingProgramTopic) {
+          await db.insert(programTopics).values({
+            programId: savedProgram.id,
+            name: topicName,
+            normalizedName,
+            displayOrder: index + 1,
+          });
+        }
+      }
     }
   }
 

@@ -1,7 +1,9 @@
-import { StrictMode, useEffect, useMemo, useState } from "react";
-import type { FormEvent } from "react";
+import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, FormEvent } from "react";
 import { createRoot } from "react-dom/client";
+import L from "leaflet";
 import { AdminApp } from "./admin";
+import "leaflet/dist/leaflet.css";
 import "./styles.css";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -40,7 +42,13 @@ interface School {
   address: string | null;
   phone: string | null;
   email: string | null;
+  latitude: string | null;
+  longitude: string | null;
   mapUrl: string | null;
+  website: string | null;
+  sourceName: string | null;
+  sourceUrl: string | null;
+  lastVerifiedAt: string | null;
   generalInfo: string | null;
 }
 
@@ -56,7 +64,12 @@ interface PublicSettings {
   backgroundImageUrl: string | null;
   faviconUrl: string | null;
   carouselImages: string | null;
+  educationalBackgroundImages: string | null;
   subjectWindowIntervalSeconds: number;
+  subjectWindowRotationSeconds: number;
+  subjectWindowPauseSeconds: number;
+  subjectWindowSizeValue: number;
+  subjectWindowSizeUnit: "px" | "cm";
   subjectWindowItems: string | null;
   whatsappNumber: string;
   siteTitle: string;
@@ -114,7 +127,12 @@ const emptySettings: PublicSettings = {
   backgroundImageUrl: null,
   faviconUrl: null,
   carouselImages: null,
-  subjectWindowIntervalSeconds: 5,
+  educationalBackgroundImages: null,
+  subjectWindowIntervalSeconds: 3,
+  subjectWindowRotationSeconds: 1,
+  subjectWindowPauseSeconds: 2,
+  subjectWindowSizeValue: 140,
+  subjectWindowSizeUnit: "px",
   subjectWindowItems: null,
   whatsappNumber: "",
   siteTitle: "",
@@ -135,13 +153,67 @@ const initialStudentForm: StudentForm = {
 
 interface SubjectWindowItem {
   id: string;
+  subjectId?: string | null;
+  subjectName?: string | null;
   title: string;
-  keywords: string[];
-  definition: string;
-  professions: string[];
-  jobs: string[];
+  slug: string;
+  shortDescription?: string | null;
+  keywords?: string[];
+  definition?: string;
+  professions?: string[];
+  jobs?: string[];
   imageUrl: string;
 }
+
+interface GlossaryArticle {
+  id: string;
+  title: string;
+  slug: string;
+  summary: string | null;
+  fullDefinition: string | null;
+  introduction: string | null;
+  body: string | null;
+  examples: string[];
+  counterExamples: string[];
+  commonMistakes: string[];
+  applications: string[];
+  relatedConcepts: string[];
+  conclusion: string | null;
+  seoTitle?: string | null;
+  imageUrl: string | null;
+  levels: { id: string; levelName: string; content: string; examples: string | null }[];
+  media: { id: string; type: string; title: string | null; description: string | null; url: string | null; altText: string | null }[];
+  sources: { id: string; title: string; author: string | null; institution: string | null; url: string | null; sourceType: string | null; accessDate: string | null }[];
+  relatedTopics: { title: string; slug: string; relationLabel: string | null }[];
+}
+
+interface StudyProgram {
+  id: string;
+  name: string;
+  academicLevel: string;
+  titleGranted: string | null;
+  duration: string | null;
+  modality: string | null;
+  description: string | null;
+  website: string | null;
+  institutionName: string;
+  institutionPhone: string | null;
+  institutionEmail: string | null;
+  sourceName: string | null;
+  sourceUrl: string | null;
+  lastVerifiedAt: string | null;
+  topics: { id: string; name: string; normalizedName: string }[];
+}
+
+interface SubjectWindowCard {
+  slotKey: string;
+  subjectKey: string;
+  title: string;
+  slugTitle: string;
+  imageUrl: string;
+}
+
+const subjectWindowLoopCopies = 4;
 
 const navbarFloatItems = [
   "notebook",
@@ -156,6 +228,13 @@ const navbarFloatItems = [
   "beaker",
   "pencil",
 ];
+
+const subjectFallbackImages: Record<string, string> = {
+  matematica: "https://images.unsplash.com/photo-1509228468518-180dd4864904?auto=format&fit=crop&w=900&q=80",
+  biologia: "https://images.unsplash.com/photo-1530026405186-ed1f139313f8?auto=format&fit=crop&w=900&q=80",
+  quimica: "https://images.unsplash.com/photo-1532187863486-abf9dbad1b69?auto=format&fit=crop&w=900&q=80",
+  fisica: "https://images.unsplash.com/photo-1636466497217-26a8cbeaf0aa?auto=format&fit=crop&w=900&q=80",
+};
 
 function slugify(value: string) {
   return value
@@ -323,11 +402,71 @@ function parseImageList(value: string | null) {
     .filter(Boolean);
 }
 
-function subjectWindowSpeedToIntervalMs(value: number) {
-  const speed = Math.min(50, Math.max(1, Number(value || 5)));
-  const slowness = (50 - speed) / 49;
+function imageWithWidth(url: string, width: number) {
+  try {
+    const nextUrl = new URL(url);
 
-  return Math.round(1000 + 59000 * Math.pow(slowness, 1.8));
+    nextUrl.searchParams.set("w", String(width));
+    nextUrl.searchParams.set("q", width >= 2400 ? "82" : "78");
+    nextUrl.searchParams.set("auto", nextUrl.searchParams.get("auto") || "format");
+    nextUrl.searchParams.set("fit", nextUrl.searchParams.get("fit") || "crop");
+
+    return nextUrl.toString();
+  } catch {
+    return url;
+  }
+}
+
+function selectDailyImage(images: string[]) {
+  if (images.length === 0) {
+    return "";
+  }
+
+  const dayIndex = Math.floor(Date.now() / 86_400_000);
+
+  return images[dayIndex % images.length];
+}
+
+function subjectWindowRotationMs(value: number) {
+  const seconds = Math.min(20, Math.max(0.5, Number(value || 1)));
+
+  return Math.round(seconds * 1000);
+}
+
+function subjectWindowPauseToMs(value: number) {
+  const seconds = Math.min(20, Math.max(0, Number(value ?? 2)));
+
+  return Math.round(seconds * 1000);
+}
+
+function subjectWindowSize(value: number, unit: "px" | "cm") {
+  const size = Math.min(500, Math.max(1, Number(value || 140)));
+
+  return `${size}${unit === "cm" ? "cm" : "px"}`;
+}
+
+function subjectWindowKey(item: SubjectWindowItem) {
+  return item.subjectId || slugify(item.subjectName || item.title);
+}
+
+function subjectWindowDisplayKey(item: SubjectWindowItem) {
+  return slugify(item.title);
+}
+
+function subjectWindowTitle(item: SubjectWindowItem) {
+  return item.title;
+}
+
+function subjectWindowFallbackImage(subjectKey: string, fallbackImages: string[]) {
+  return subjectFallbackImages[subjectKey] || fallbackImages[0] || "";
+}
+
+function uniqueValues(values: string[]) {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+function repeatLoop<T>(items: T[]) {
+  return Array.from({ length: subjectWindowLoopCopies }, () => items).flat();
 }
 
 function getContentBlock(blocks: ContentBlock[], key: string) {
@@ -447,7 +586,7 @@ function App() {
   const downloadables = useApiList<Downloadable>(downloadablesUrl);
   const topics = useApiList<Topic>("/api/topics?limit=50");
   const schools = useApiList<School>("/api/schools?limit=50");
-  const subjectHighlights = useApiList<SubjectWindowItem>("/api/subject-highlights");
+  const glossaryWindows = useApiList<SubjectWindowItem>("/api/glossary/windows");
   const bookingTimeSlots = useApiList<BookingTimeSlot>("/api/booking-time-slots");
   const contentBlocks = useApiList<ContentBlock>("/api/content-blocks");
 
@@ -485,9 +624,45 @@ function App() {
     }),
     [contentBlocks.items],
   );
+  const carouselImages = useMemo(() => parseImageList(settings.carouselImages), [settings.carouselImages]);
+  const educationalBackgroundImages = useMemo(
+    () => parseImageList(settings.educationalBackgroundImages),
+    [settings.educationalBackgroundImages],
+  );
 
   if (route.startsWith("#/admin")) {
     return <AdminApp />;
+  }
+
+  if (path.startsWith("/glosario/")) {
+    return (
+      <div>
+        <header className="site-header">
+          <div className="nav-float-layer" aria-hidden="true">
+            {navbarFloatItems.map((item, index) => (
+              <span className="nav-float-item" key={`${item}-${index}`}>
+                <NavbarFloatIcon name={item} />
+              </span>
+            ))}
+          </div>
+          <a className="brand" href="/">
+            {settings.siteTitle}
+          </a>
+          <nav aria-label="Secciones">
+            <a href="/">Inicio</a>
+            <a href="/glosario">Glosario</a>
+            {currentUser && currentUser.role !== "USER" ? <a href="#/admin">Admin</a> : null}
+          </nav>
+        </header>
+        <main>
+          <GlossaryArticlePage slug={path.replace(/^\/glosario\//, "")} />
+        </main>
+        <footer className="site-footer">
+          <span>{settings.siteTitle}</span>
+          {settings.whatsappNumber ? <span>WhatsApp {settings.whatsappNumber}</span> : null}
+        </footer>
+      </div>
+    );
   }
 
   if (path === "/glosario") {
@@ -511,7 +686,7 @@ function App() {
           </nav>
         </header>
         <main>
-          <GlossarySection header={content.glossaryHeader} items={subjectHighlights.items} state={subjectHighlights.state} />
+          <GlossarySection header={content.glossaryHeader} items={glossaryWindows.items} state={glossaryWindows.state} />
         </main>
         <footer className="site-footer">
           <span>{settings.siteTitle}</span>
@@ -553,13 +728,18 @@ function App() {
 
       <main>
         <SubjectCarousel
-          carouselImages={parseImageList(settings.carouselImages)}
+          carouselImages={carouselImages}
           heading={content.subjectCarousel}
-          items={subjectHighlights.items}
-          state={subjectHighlights.state}
-          intervalSeconds={settings.subjectWindowIntervalSeconds}
+          items={glossaryWindows.items}
+          state={glossaryWindows.state}
+          rotationSeconds={settings.subjectWindowRotationSeconds ?? settings.subjectWindowIntervalSeconds}
+          pauseSeconds={settings.subjectWindowPauseSeconds}
+          sizeValue={settings.subjectWindowSizeValue}
+          sizeUnit={settings.subjectWindowSizeUnit}
           isAdmin={isAdmin}
         />
+
+        <EducationalBackgroundSection images={educationalBackgroundImages} isAdmin={isAdmin} />
 
         <section className="hero section" id="inicio">
           <div className="hero-copy">
@@ -593,7 +773,7 @@ function App() {
           heading={content.downloadables}
         />
 
-        <TopicsSection heading={content.topics} topics={topics} />
+        <StudySection />
 
         <SchoolsSection heading={content.schools} schools={schools} isAdmin={isAdmin} />
 
@@ -629,100 +809,282 @@ function SubjectCarousel({
   heading,
   items,
   state,
-  intervalSeconds,
+  rotationSeconds,
+  pauseSeconds,
+  sizeValue,
+  sizeUnit,
   isAdmin,
 }: {
   carouselImages: string[];
   heading: ContentBlock | null;
   items: SubjectWindowItem[];
   state: LoadState;
-  intervalSeconds: number;
+  rotationSeconds: number;
+  pauseSeconds: number;
+  sizeValue: number;
+  sizeUnit: "px" | "cm";
   isAdmin: boolean;
 }) {
-  const [windowItems, setWindowItems] = useState<SubjectWindowItem[]>([]);
+  const [windowRows, setWindowRows] = useState<SubjectWindowCard[][]>([]);
   const [flippingSlots, setFlippingSlots] = useState<number[]>([]);
   const [flipModes, setFlipModes] = useState<Record<number, "x" | "y">>({});
+  const subjectItems = useMemo(() => {
+    const seen = new Set<string>();
+
+    return items.filter((item) => {
+      const key = subjectWindowDisplayKey(item);
+
+      if (seen.has(key)) {
+        return false;
+      }
+
+      seen.add(key);
+      return true;
+    });
+  }, [items]);
+  const imagesBySubject = useMemo(() => {
+    const groups = new Map<string, string[]>();
+
+    items.forEach((item) => {
+      const key = subjectWindowKey(item);
+      const images = groups.get(key) || [];
+
+      if (item.imageUrl && !images.includes(item.imageUrl)) {
+        images.push(item.imageUrl);
+      }
+
+      groups.set(key, images);
+    });
+
+    return groups;
+  }, [items]);
+  const rotationMs = subjectWindowRotationMs(rotationSeconds);
+  const pauseMs = subjectWindowPauseToMs(pauseSeconds);
+  const windowSize = subjectWindowSize(sizeValue, sizeUnit);
+  const rowCount = 2;
+  const allImages = useMemo(
+    () =>
+      uniqueValues([
+        ...items.map((item) => item.imageUrl),
+        ...carouselImages,
+        ...Object.values(subjectFallbackImages),
+      ]),
+    [carouselImages, items],
+  );
+
+  function pickImage(subjectKey: string, preferredImages: string[], usedImages: Set<string>) {
+    const pool = uniqueValues([
+      ...preferredImages,
+      subjectWindowFallbackImage(subjectKey, allImages),
+      ...allImages,
+    ]);
+    const nextImage = pool.find((image) => !usedImages.has(image)) || pool[0] || "";
+
+    if (nextImage) {
+      usedImages.add(nextImage);
+    }
+
+    return nextImage;
+  }
+
+  const initialWindowRows = useMemo(() => {
+    if (subjectItems.length === 0) {
+      return [];
+    }
+
+    const usedImages = new Set<string>();
+
+    return Array.from({ length: rowCount }, (_, rowIndex) =>
+      subjectItems
+        .filter((_, index) => index % rowCount === rowIndex)
+        .map((subject, index) => {
+          const subjectKey = subjectWindowKey(subject);
+          const images = imagesBySubject.get(subjectKey) || [];
+
+          return {
+            slotKey: `subject-window-${rowIndex}-${index}`,
+            subjectKey,
+            title: subjectWindowTitle(subject),
+            slugTitle: subject.slug || slugify(subject.title),
+            imageUrl: pickImage(subjectKey, images, usedImages),
+          };
+        }),
+    );
+  }, [allImages, imagesBySubject, subjectItems]);
 
   useEffect(() => {
-    if (items.length === 0) {
-      setWindowItems([]);
+    if (subjectItems.length === 0) {
+      setWindowRows([]);
+      setFlippingSlots([]);
       return;
     }
 
     const timers: number[] = [];
-    const totalWindows = 12;
-    const baseIntervalMs = subjectWindowSpeedToIntervalMs(intervalSeconds);
+    let isCancelled = false;
+    const nextRows = initialWindowRows;
+    const totalWindows = nextRows.reduce((total, row) => total + row.length, 0);
+    setWindowRows(nextRows);
 
     function flipSlot(slot: number) {
+      if (isCancelled) {
+        return;
+      }
+
       setFlipModes((current) => ({ ...current, [slot]: Math.random() > 0.5 ? "x" : "y" }));
       setFlippingSlots((current) => (current.includes(slot) ? current : [...current, slot]));
-      window.setTimeout(() => {
-        setWindowItems((current) => {
-          const next = [...current];
-          const visibleTitles = new Set(next.map((item) => item.title));
-          const currentTitle = next[slot]?.title;
-          const candidates = items.filter(
-            (item) => item.title !== currentTitle && !visibleTitles.has(item.title),
-          );
-          const fallbackCandidates = items.filter((item) => item.title !== currentTitle);
-          const pool = candidates.length ? candidates : fallbackCandidates;
+      timers.push(window.setTimeout(() => {
+        setWindowRows((current) => current);
+      }, Math.round(rotationMs / 2)));
 
-          if (pool.length > 0) {
-            next[slot] = pool[Math.floor(Math.random() * pool.length)];
-          }
-
-          return next;
-        });
-      }, 900);
-
-      window.setTimeout(() => {
+      timers.push(window.setTimeout(() => {
         setFlippingSlots((current) => current.filter((item) => item !== slot));
-      }, 1800);
+      }, rotationMs));
     }
 
-    Array.from({ length: totalWindows }, (_, slot) => {
-      const firstDelay = Math.round((slot * baseIntervalMs) / totalWindows);
+    function scheduleBatch(delay: number) {
+      timers.push(window.setTimeout(() => {
+        if (isCancelled || totalWindows === 0) {
+          return;
+        }
 
-      timers.push(
-        window.setTimeout(() => {
+        const batchSize = Math.min(totalWindows, Math.floor(Math.random() * 3) + 1);
+        const slots = Array.from({ length: totalWindows }, (_, slot) => slot).sort(() => Math.random() - 0.5);
+
+        slots.slice(0, batchSize).forEach((slot, index) => {
+          timers.push(window.setTimeout(() => {
+            flipSlot(slot);
+          }, index * 120));
+        });
+
+        const nextPause = Math.max(650, batchSize === 1 ? pauseMs * 0.42 : pauseMs * 0.75) + Math.round(Math.random() * 350);
+        scheduleBatch(rotationMs + nextPause);
+      }, delay));
+    }
+
+    scheduleBatch(650);
+
+    if (totalWindows > 0) {
+      const starterSlots = Array.from({ length: totalWindows }, (_, slot) => slot).sort(() => Math.random() - 0.5).slice(0, 2);
+
+      starterSlots.forEach((slot, index) => {
+        timers.push(window.setTimeout(() => {
           flipSlot(slot);
-          timers.push(window.setInterval(() => flipSlot(slot), baseIntervalMs));
-        }, firstDelay),
-      );
-    });
+        }, index * 450));
+      });
+    }
 
-    return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [intervalSeconds, items]);
+    return () => {
+      isCancelled = true;
+      timers.forEach((timer) => window.clearTimeout(timer));
+      setFlippingSlots([]);
+    };
+  }, [initialWindowRows, pauseMs, rotationMs, subjectItems]);
 
-  useEffect(() => {
-    setWindowItems(items.length ? Array.from({ length: 12 }, (_, index) => items[index % items.length]) : []);
-  }, [items]);
+  const backgroundImages = uniqueValues(initialWindowRows.flat().map((item) => item.imageUrl));
 
   return (
-    <section className="subject-carousel-section" aria-labelledby="materias-title">
+    <section
+      className="subject-carousel-section"
+      aria-labelledby="materias-title"
+      style={{ "--subject-window-size": windowSize } as CSSProperties}
+    >
+      <div className="subject-window-background" aria-hidden="true">
+        <div className="subject-window-background-track">
+          {repeatLoop(backgroundImages).map((image, index) => (
+            <span className="subject-window-background-tile" key={`${image}-${index}`}>
+              <img src={image} alt="" loading="eager" decoding="async" />
+            </span>
+          ))}
+        </div>
+      </div>
       <div className="section-heading subject-carousel-heading">
-        <h2 id="materias-title">{heading?.title || ""}</h2>
+        <h2 id="materias-title">{heading?.title || "Ventanas de glosario"}</h2>
         <AdminEditLink isAdmin={isAdmin} href="#/admin/subject-highlights" label="Editar carrusel" />
       </div>
 
-      <div className="subject-window-carousel" aria-label="Campos del conocimiento">
-        {windowItems.map((item, index) => (
-          <a
-            className={`subject-window ${flippingSlots.includes(index) ? `flipping flip-${flipModes[index] || "y"}` : ""}`}
-            href={`/glosario#materia-${slugify(item.title)}`}
-            key={`subject-window-${index}`}
-          >
-            <div className="subject-window-inner">
-              <img src={carouselImages[index % carouselImages.length] || item.imageUrl} alt={item.title} />
-              <div>
-                <h3>{item.title}</h3>
-              </div>
+      <div
+        className="subject-window-carousel"
+        aria-label="Ventanas de glosario"
+      >
+        <div className="subject-window-foreground">
+        {windowRows.map((rowItems, rowIndex) => (
+          <div className="subject-window-row" key={`subject-row-${rowIndex}`}>
+            <div className="subject-window-track">
+              {repeatLoop(rowItems).map((item, index) => {
+                const rowOffset = windowRows
+                  .slice(0, rowIndex)
+                  .reduce((total, row) => total + row.length, 0);
+                const slot = rowOffset + (index % Math.max(1, rowItems.length));
+
+                return (
+                  <a
+                    className={`subject-window ${flippingSlots.includes(slot) ? `flipping flip-${flipModes[slot] || "y"}` : ""}`}
+                    href={`/glosario/${item.slugTitle}`}
+                    key={`${item.slotKey}-${index}`}
+                    style={{ "--subject-window-duration": `${rotationMs}ms` } as CSSProperties}
+                  >
+                    <div className="subject-window-inner">
+                      <img
+                        src={item.imageUrl || carouselImages[index % carouselImages.length] || ""}
+                        alt={item.title}
+                        loading="eager"
+                        decoding="async"
+                        onError={(event) => {
+                          const fallback = subjectWindowFallbackImage(item.subjectKey, carouselImages);
+
+                          if (fallback && event.currentTarget.src !== fallback) {
+                            event.currentTarget.src = fallback;
+                          }
+                        }}
+                      />
+                      <div>
+                        <h3>{item.title}</h3>
+                      </div>
+                    </div>
+                  </a>
+                );
+              })}
             </div>
-          </a>
+          </div>
         ))}
+        </div>
         <SectionState state={state} emptyText={items.length === 0 ? "No hay campos publicados todavía." : undefined} />
       </div>
 
+    </section>
+  );
+}
+
+function EducationalBackgroundSection({ images, isAdmin }: { images: string[]; isAdmin: boolean }) {
+  const selectedImage = selectDailyImage(images);
+
+  if (!selectedImage) {
+    return null;
+  }
+
+  return (
+    <section
+      className="educational-background-section"
+      style={{ "--educational-bg-image": `url("${imageWithWidth(selectedImage, 2400)}")` } as CSSProperties}
+      aria-label="Escena educativa"
+    >
+      <picture className="educational-background-picture" aria-hidden="true">
+        <source media="(max-width: 640px)" srcSet={imageWithWidth(selectedImage, 1200)} />
+        <source media="(max-width: 1100px)" srcSet={imageWithWidth(selectedImage, 1800)} />
+        <img
+          src={imageWithWidth(selectedImage, 2400)}
+          alt=""
+          loading="lazy"
+          decoding="async"
+        />
+      </picture>
+      <div className="educational-background-overlay">
+        <div className="educational-background-copy">
+          <span className="eyebrow">Aprender ciencias</span>
+          <h2>Un fondo vivo para estudiar, preguntar y practicar.</h2>
+          <AdminEditLink isAdmin={isAdmin} href="#/admin/settings" label="Editar fondo" />
+        </div>
+      </div>
     </section>
   );
 }
@@ -754,20 +1116,302 @@ function GlossarySection({
       </div>
       <div className="subject-definition-grid">
         {items.map((item) => (
-          <article className="subject-definition" id={`materia-${slugify(item.title)}`} key={item.title}>
+          <article className="subject-definition" id={`materia-${item.slug || slugify(item.title)}`} key={item.title}>
             <span className="tag">{item.title}</span>
             <h3>{item.title}</h3>
-            <p>{item.definition}</p>
-            <dl>
-              <dt>Profesiones relacionadas</dt>
-              <dd>{item.professions.join(" · ")}</dd>
-              <dt>Trabajos comunes</dt>
-              <dd>{item.jobs.join(" · ")}</dd>
-            </dl>
+            <p>{item.shortDescription || item.definition}</p>
+            <div className="definition-actions">
+              <a className="text-action" href={`/glosario/${item.slug || slugify(item.title)}`}>
+                Leer artículo completo
+              </a>
+              <a className="secondary-action" href="/">
+                Volver al inicio
+              </a>
+              <a className="primary-action" href={`/?solicitar=${encodeURIComponent(item.slug || item.title)}#elegir-temarios`}>
+                Solicitar clase sobre este tema
+              </a>
+            </div>
           </article>
         ))}
       </div>
       <SectionState state={state} emptyText={items.length === 0 ? "No hay definiciones publicadas todavía." : undefined} />
+    </section>
+  );
+}
+
+function GlossaryArticlePage({ slug }: { slug: string }) {
+  const [article, setArticle] = useState<GlossaryArticle | null>(null);
+  const [state, setState] = useState<LoadState>("loading");
+
+  useEffect(() => {
+    let isMounted = true;
+    setState("loading");
+    apiGet<{ article: GlossaryArticle }>(`/api/glossary/articles/${encodeURIComponent(slug)}`)
+      .then((data) => {
+        if (!isMounted) return;
+        setArticle(data.article);
+        document.title = data.article.seoTitle || `${data.article.title} - aulaCiencias`;
+        setState("ready");
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setState("error");
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [slug]);
+
+  if (state === "loading") {
+    return <section className="section"><p className="muted">Cargando artículo...</p></section>;
+  }
+
+  if (!article) {
+    return (
+      <section className="section">
+        <h1>Artículo no encontrado</h1>
+        <p className="muted">No encontramos esa definición en el glosario.</p>
+        <a className="secondary-action" href="/glosario">Volver al glosario</a>
+      </section>
+    );
+  }
+
+  return (
+    <article className="section glossary-article-page">
+      <div className="glossary-article-hero">
+        <div>
+          <p className="eyebrow">Glosario</p>
+          <h1>{article.title}</h1>
+          {article.summary ? <p>{article.summary}</p> : null}
+          <div className="definition-actions">
+            <a className="primary-action" href={`/?solicitar=${encodeURIComponent(article.slug)}#elegir-temarios`}>
+              Solicitar una clase sobre este tema
+            </a>
+            <a className="secondary-action" href="/">Volver al inicio</a>
+          </div>
+        </div>
+        {article.imageUrl ? <img src={article.imageUrl} alt={article.title} loading="lazy" /> : null}
+      </div>
+
+      <div className="glossary-article-body">
+        {article.introduction ? <section><h2>Introducción</h2><p>{article.introduction}</p></section> : null}
+        {article.fullDefinition ? <section><h2>Definición desarrollada</h2><p>{article.fullDefinition}</p></section> : null}
+        {article.body ? <section><h2>Desarrollo</h2><p>{article.body}</p></section> : null}
+        {article.levels.length ? (
+          <section>
+            <h2>Explicación por niveles</h2>
+            <div className="article-level-grid">
+              {article.levels.map((level) => (
+                <article className="info-card" key={level.id}>
+                  <h3>{level.levelName}</h3>
+                  <p>{level.content}</p>
+                  {level.examples ? <p><strong>Ejemplos:</strong> {level.examples}</p> : null}
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
+        {article.media.length ? (
+          <section>
+            <h2>Recursos visuales</h2>
+            <div className="gallery-grid">
+              {article.media.map((item) => (
+                <article className="resource-card" key={item.id}>
+                  {item.url ? <img src={item.url} alt={item.altText || item.title || ""} loading="lazy" /> : null}
+                  <div className="card-body">
+                    <h3>{item.title || item.type}</h3>
+                    {item.description ? <p>{item.description}</p> : null}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
+        <ArticleListSection title="Ejemplos" items={article.examples} />
+        <ArticleListSection title="Errores comunes" items={article.commonMistakes} />
+        <ArticleListSection title="Aplicaciones" items={article.applications} />
+        <ArticleListSection title="Relación con otros conceptos" items={article.relatedConcepts} />
+        {article.relatedTopics.length ? (
+          <section>
+            <h2>Temas relacionados</h2>
+            <div className="definition-actions">
+              {article.relatedTopics.map((topic) => (
+                <a className="text-action" href={`/glosario/${topic.slug}`} key={topic.slug}>
+                  {topic.title}
+                </a>
+              ))}
+            </div>
+          </section>
+        ) : null}
+        {article.conclusion ? <section><h2>Resumen final</h2><p>{article.conclusion}</p></section> : null}
+        {article.sources.length ? (
+          <section>
+            <h2>Fuentes citadas</h2>
+            <ol className="source-list">
+              {article.sources.map((source) => (
+                <li key={source.id}>
+                  {source.url ? <a href={source.url} target="_blank" rel="noreferrer">{source.title}</a> : source.title}
+                  {[source.institution, source.sourceType, source.accessDate].filter(Boolean).join(" · ")}
+                </li>
+              ))}
+            </ol>
+          </section>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function ArticleListSection({ title, items }: { title: string; items: string[] }) {
+  if (!items.length) return null;
+
+  return (
+    <section>
+      <h2>{title}</h2>
+      <ul className="summary-list">
+        {items.map((item) => <li key={item}>{item}</li>)}
+      </ul>
+    </section>
+  );
+}
+
+function StudySection() {
+  const [query, setQuery] = useState("");
+  const [academicLevel, setAcademicLevel] = useState("");
+  const [includeTopic, setIncludeTopic] = useState("");
+  const [excludeTopic, setExcludeTopic] = useState("");
+  const [programs, setPrograms] = useState<StudyProgram[]>([]);
+  const [total, setTotal] = useState(0);
+  const [state, setState] = useState<LoadState>("loading");
+  const levels = useApiList<string>("/api/study/academic-levels");
+  const studyTopics = useApiList<{ normalizedName: string; name: string }>("/api/study/topics");
+
+  useEffect(() => {
+    let isMounted = true;
+    const params = new URLSearchParams({ limit: "80", offset: "0" });
+
+    if (query.trim()) params.set("q", query.trim());
+    if (academicLevel) params.set("academicLevel", academicLevel);
+    if (includeTopic) params.set("includeTopics", includeTopic);
+    if (excludeTopic) params.set("excludeTopics", excludeTopic);
+
+    setState("loading");
+    apiGet<{ items: StudyProgram[]; total: number }>(`/api/study/programs?${params}`)
+      .then((data) => {
+        if (!isMounted) return;
+        setPrograms(data.items);
+        setTotal(data.total);
+        setState("ready");
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setState("error");
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [academicLevel, excludeTopic, includeTopic, query]);
+
+  return (
+    <section className="section study-section" id="elegir-que-estudiar">
+      <div className="section-heading">
+        <p className="eyebrow">Orientación académica</p>
+        <h2>Elegir qué estudiar</h2>
+        <p>
+          Carreras e instituciones de Gualeguaychú cargadas desde fuentes verificables, con filtros para cruzar
+          intereses, temas y niveles de formación.
+        </p>
+      </div>
+
+      <div className="study-filter-bar">
+        <label>
+          Buscar
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Carrera, institución o tema"
+          />
+        </label>
+        <label>
+          Nivel
+          <select value={academicLevel} onChange={(event) => setAcademicLevel(event.target.value)}>
+            <option value="">Todos</option>
+            {levels.items.map((level) => (
+              <option key={level} value={level}>{level}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Incluir tema
+          <select value={includeTopic} onChange={(event) => setIncludeTopic(event.target.value)}>
+            <option value="">Cualquier tema</option>
+            {studyTopics.items.map((topic) => (
+              <option key={topic.normalizedName} value={topic.name}>{topic.name}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Evitar tema
+          <select value={excludeTopic} onChange={(event) => setExcludeTopic(event.target.value)}>
+            <option value="">Ninguno</option>
+            {studyTopics.items.map((topic) => (
+              <option key={topic.normalizedName} value={topic.name}>{topic.name}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="study-results-header">
+        <span>{total} opción(es) encontradas</span>
+        {(query || academicLevel || includeTopic || excludeTopic) ? (
+          <button
+            className="secondary-action"
+            type="button"
+            onClick={() => {
+              setQuery("");
+              setAcademicLevel("");
+              setIncludeTopic("");
+              setExcludeTopic("");
+            }}
+          >
+            Limpiar filtros
+          </button>
+        ) : null}
+      </div>
+
+      <div className="study-program-grid">
+        {programs.map((program) => (
+          <article className="info-card study-program-card" key={program.id}>
+            <span className="tag">{program.academicLevel}</span>
+            <h3>{program.name}</h3>
+            <p className="topic-meta">{program.institutionName}</p>
+            {program.description ? <p>{program.description}</p> : null}
+            <dl>
+              {program.titleGranted ? <><dt>Título</dt><dd>{program.titleGranted}</dd></> : null}
+              {program.duration ? <><dt>Duración</dt><dd>{program.duration}</dd></> : null}
+              {program.modality ? <><dt>Modalidad</dt><dd>{program.modality}</dd></> : null}
+              <dt>Contacto</dt>
+              <dd>{[program.institutionPhone, program.institutionEmail].filter(Boolean).join(" · ") || "No informado"}</dd>
+            </dl>
+            <div className="study-topic-list">
+              {program.topics.map((topic) => <span key={topic.id}>{topic.name}</span>)}
+            </div>
+            <div className="definition-actions">
+              {program.website ? <a className="text-action" href={program.website} target="_blank" rel="noreferrer">Ver carrera</a> : null}
+              {program.sourceUrl ? <a className="text-action" href={program.sourceUrl} target="_blank" rel="noreferrer">Fuente</a> : null}
+            </div>
+            {program.sourceName ? (
+              <p className="source-note">
+                Fuente: {program.sourceName}
+                {program.lastVerifiedAt ? ` · verificado ${program.lastVerifiedAt}` : ""}
+              </p>
+            ) : null}
+          </article>
+        ))}
+      </div>
+      <SectionState state={state} emptyText={programs.length === 0 ? "No hay opciones con esos filtros." : undefined} />
     </section>
   );
 }
@@ -1006,6 +1650,67 @@ function TopicsSection({ heading, topics }: { heading: ContentBlock | null; topi
   );
 }
 
+const gualeguaychuCenter: [number, number] = [-33.0094, -58.5172];
+
+function LeafletSchoolMap({ school }: { school: School }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<L.Map | null>(null);
+  const markerRef = useRef<L.Marker | null>(null);
+  const latitude = Number(school.latitude);
+  const longitude = Number(school.longitude);
+  const hasCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude);
+  const position: [number, number] = hasCoordinates ? [latitude, longitude] : gualeguaychuCenter;
+
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current) {
+      return;
+    }
+
+    const map = L.map(containerRef.current, {
+      center: position,
+      zoom: hasCoordinates ? 15 : 13,
+      scrollWheelZoom: false,
+    });
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors",
+      maxZoom: 19,
+    }).addTo(map);
+
+    const icon = L.divIcon({
+      className: "school-map-marker",
+      html: "",
+      iconAnchor: [9, 9],
+      iconSize: [18, 18],
+    });
+
+    markerRef.current = L.marker(position, { icon }).addTo(map);
+    mapRef.current = map;
+  }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const marker = markerRef.current;
+
+    if (!map || !marker) {
+      return;
+    }
+
+    marker.setLatLng(position);
+    marker.bindPopup(hasCoordinates ? school.name : "Gualeguaychú");
+    map.setView(position, hasCoordinates ? 15 : 13, { animate: true });
+  }, [hasCoordinates, position[0], position[1], school.name]);
+
+  return (
+    <div className="leaflet-school-map-wrap">
+      <div className="leaflet-school-map" ref={containerRef} aria-label={`Mapa de ${school.name}`} />
+      {!hasCoordinates ? (
+        <p className="source-note">Ubicación aproximada de la ciudad. Este colegio todavía no tiene coordenadas cargadas.</p>
+      ) : null}
+    </div>
+  );
+}
+
 function SchoolsSection({
   heading,
   schools,
@@ -1101,15 +1806,7 @@ function SchoolsSection({
             </dl>
             <div className="school-map-panel">
               <h4>Mapa</h4>
-              <iframe
-                key={selectedSchool.id}
-                title={`Mapa de ${selectedSchool.name}`}
-                src={`https://www.google.com/maps?q=${encodeURIComponent(
-                  `${selectedSchool.name} ${selectedSchool.address || ""}`,
-                )}&output=embed`}
-                loading="lazy"
-                referrerPolicy="no-referrer-when-downgrade"
-              />
+              <LeafletSchoolMap school={selectedSchool} />
             </div>
           </article>
         ) : null}
@@ -1176,6 +1873,27 @@ function BookingSection({
       ),
     [topicLevel, topicTrack, topicYear, topicSubject, topics],
   );
+
+  useEffect(() => {
+    const requestedTopic = new URLSearchParams(window.location.search).get("solicitar");
+
+    if (!requestedTopic || topics.length === 0) {
+      return;
+    }
+
+    const requestedKey = slugify(requestedTopic);
+    const matchingTopic = topics.find((topic) =>
+      [topic.title, topic.subject].some((value) => value && slugify(value).includes(requestedKey)),
+    );
+
+    if (!matchingTopic) {
+      return;
+    }
+
+    setTopicSubject(matchingTopic.subject || "");
+    setSelectedTopicIds((current) => (current.includes(matchingTopic.id) ? current : [matchingTopic.id]));
+  }, [topics]);
+
   const hours = calculateBookingHours(selectedTopicIds.length, settings.topicsPerHour);
   const endTime = startTime ? addHours(startTime, hours) : "";
   const estimatedAmount = hours * Number(settings.pricePerHour || 0);
@@ -1376,7 +2094,7 @@ function BookingSection({
           />
         </div>
 
-        <div className="booking-panel">
+        <div className="booking-panel" id="elegir-temarios">
           <h3>Elegir temarios para la reserva</h3>
           <div className="checklist">
             {filteredTopics.map((topic) => (

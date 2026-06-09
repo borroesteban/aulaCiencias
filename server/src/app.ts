@@ -10,8 +10,10 @@ import { bookingsRouter } from "./bookings/routes.js";
 import { contentBlocksRouter } from "./content-blocks/routes.js";
 import { downloadablesRouter } from "./downloadables/routes.js";
 import { errorHandler } from "./http/error-handler.js";
+import { glossaryRouter } from "./glossary/routes.js";
 import { schoolsRouter } from "./schools/routes.js";
 import { settingsRouter } from "./settings/routes.js";
+import { studyRouter } from "./study/routes.js";
 import { subjectHighlightsRouter } from "./subject-highlights/routes.js";
 import { subjectsRouter } from "./subjects/routes.js";
 import { topicsRouter } from "./topics/routes.js";
@@ -52,6 +54,8 @@ export function createApp() {
   app.use("/api/content-blocks", contentBlocksRouter);
   app.use("/api/schools", schoolsRouter);
   app.use("/api/settings", settingsRouter);
+  app.use("/api/glossary", glossaryRouter);
+  app.use("/api/study", studyRouter);
   app.use("/api/admin", adminRouter);
   app.use(errorHandler);
 

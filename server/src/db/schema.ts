@@ -107,6 +107,106 @@ export const subjectHighlights = pgTable("subject_highlights", {
   updatedAt: updatedAtColumn(),
 });
 
+export const glossaryTopics = pgTable("glossary_topics", {
+  id: idColumn(),
+  title: text("title").notNull(),
+  slug: text("slug").notNull().unique(),
+  shortDescription: text("short_description"),
+  icon: text("icon"),
+  imageUrl: text("image_url"),
+  themeColor: text("theme_color"),
+  displayOrder: integer("display_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: createdAtColumn(),
+  updatedAt: updatedAtColumn(),
+});
+
+export const glossaryArticles = pgTable("glossary_articles", {
+  id: idColumn(),
+  topicId: uuid("topic_id")
+    .notNull()
+    .references(() => glossaryTopics.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  summary: text("summary"),
+  fullDefinition: text("full_definition"),
+  introduction: text("introduction"),
+  body: text("body"),
+  examples: text("examples"),
+  counterExamples: text("counter_examples"),
+  commonMistakes: text("common_mistakes"),
+  applications: text("applications"),
+  relatedConcepts: text("related_concepts"),
+  conclusion: text("conclusion"),
+  seoTitle: text("seo_title"),
+  seoDescription: text("seo_description"),
+  keywords: text("keywords"),
+  ogImageUrl: text("og_image_url"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: createdAtColumn(),
+  updatedAt: updatedAtColumn(),
+});
+
+export const glossaryArticleLevels = pgTable("glossary_article_levels", {
+  id: idColumn(),
+  articleId: uuid("article_id")
+    .notNull()
+    .references(() => glossaryArticles.id, { onDelete: "cascade" }),
+  levelName: text("level_name").notNull(),
+  levelOrder: integer("level_order").notNull().default(0),
+  content: text("content").notNull(),
+  examples: text("examples"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: createdAtColumn(),
+  updatedAt: updatedAtColumn(),
+});
+
+export const glossaryArticleMedia = pgTable("glossary_article_media", {
+  id: idColumn(),
+  articleId: uuid("article_id")
+    .notNull()
+    .references(() => glossaryArticles.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  title: text("title"),
+  description: text("description"),
+  url: text("url"),
+  altText: text("alt_text"),
+  dataJson: jsonb("data_json").$type<Record<string, unknown> | null>(),
+  displayOrder: integer("display_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: createdAtColumn(),
+  updatedAt: updatedAtColumn(),
+});
+
+export const glossaryArticleSources = pgTable("glossary_article_sources", {
+  id: idColumn(),
+  articleId: uuid("article_id")
+    .notNull()
+    .references(() => glossaryArticles.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  author: text("author"),
+  institution: text("institution"),
+  url: text("url"),
+  sourceType: text("source_type"),
+  accessDate: date("access_date"),
+  displayOrder: integer("display_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: createdAtColumn(),
+  updatedAt: updatedAtColumn(),
+});
+
+export const glossaryArticleRelatedTopics = pgTable("glossary_article_related_topics", {
+  id: idColumn(),
+  articleId: uuid("article_id")
+    .notNull()
+    .references(() => glossaryArticles.id, { onDelete: "cascade" }),
+  relatedArticleId: uuid("related_article_id")
+    .notNull()
+    .references(() => glossaryArticles.id, { onDelete: "cascade" }),
+  relationLabel: text("relation_label"),
+  createdAt: createdAtColumn(),
+  updatedAt: updatedAtColumn(),
+});
+
 export const bookingTimeSlots = pgTable("booking_time_slots", {
   id: idColumn(),
   startTime: time("start_time").notNull().unique(),
@@ -125,6 +225,10 @@ export const schools = pgTable("schools", {
   address: text("address"),
   phone: text("phone"),
   email: text("email"),
+  website: text("website"),
+  sourceName: text("source_name"),
+  sourceUrl: text("source_url"),
+  lastVerifiedAt: date("last_verified_at"),
   latitude: numeric("latitude", { precision: 10, scale: 7 }),
   longitude: numeric("longitude", { precision: 10, scale: 7 }),
   mapUrl: text("map_url"),
@@ -133,6 +237,84 @@ export const schools = pgTable("schools", {
   createdAt: createdAtColumn(),
   updatedAt: updatedAtColumn(),
 });
+
+export const institutions = pgTable("institutions", {
+  id: idColumn(),
+  name: text("name").notNull(),
+  type: text("type").notNull().default("otro"),
+  description: text("description"),
+  address: text("address"),
+  city: text("city").notNull().default("Gualeguaychú"),
+  phone: text("phone"),
+  email: text("email"),
+  website: text("website"),
+  latitude: numeric("latitude", { precision: 10, scale: 7 }),
+  longitude: numeric("longitude", { precision: 10, scale: 7 }),
+  sourceName: text("source_name"),
+  sourceUrl: text("source_url"),
+  lastVerifiedAt: date("last_verified_at"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: createdAtColumn(),
+  updatedAt: updatedAtColumn(),
+});
+
+export const academicPrograms = pgTable("academic_programs", {
+  id: idColumn(),
+  institutionId: uuid("institution_id")
+    .notNull()
+    .references(() => institutions.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  academicLevel: text("academic_level").notNull(),
+  titleGranted: text("title_granted"),
+  duration: text("duration"),
+  modality: text("modality"),
+  description: text("description"),
+  requirements: text("requirements"),
+  website: text("website"),
+  sourceName: text("source_name"),
+  sourceUrl: text("source_url"),
+  lastVerifiedAt: date("last_verified_at"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: createdAtColumn(),
+  updatedAt: updatedAtColumn(),
+});
+
+export const programTopics = pgTable("program_topics", {
+  id: idColumn(),
+  programId: uuid("program_id")
+    .notNull()
+    .references(() => academicPrograms.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  normalizedName: text("normalized_name").notNull(),
+  yearOrStage: text("year_or_stage"),
+  isRequired: boolean("is_required").notNull().default(true),
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: createdAtColumn(),
+  updatedAt: updatedAtColumn(),
+});
+
+export const studyAreas = pgTable("study_areas", {
+  id: idColumn(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  createdAt: createdAtColumn(),
+  updatedAt: updatedAtColumn(),
+});
+
+export const programStudyAreas = pgTable(
+  "program_study_areas",
+  {
+    programId: uuid("program_id")
+      .notNull()
+      .references(() => academicPrograms.id, { onDelete: "cascade" }),
+    studyAreaId: uuid("study_area_id")
+      .notNull()
+      .references(() => studyAreas.id, { onDelete: "cascade" }),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.programId, table.studyAreaId] }),
+  }),
+);
 
 export const guardians = pgTable("guardians", {
   id: idColumn(),
@@ -227,7 +409,12 @@ export const appSettings = pgTable("app_settings", {
   backgroundImageUrl: text("background_image_url"),
   faviconUrl: text("favicon_url"),
   carouselImages: text("carousel_images"),
-  subjectWindowIntervalSeconds: integer("subject_window_interval_seconds").notNull().default(5),
+  educationalBackgroundImages: text("educational_background_images"),
+  subjectWindowIntervalSeconds: integer("subject_window_interval_seconds").notNull().default(3),
+  subjectWindowRotationSeconds: numeric("subject_window_rotation_seconds", { precision: 4, scale: 1 }).notNull().default("1.0"),
+  subjectWindowPauseSeconds: numeric("subject_window_pause_seconds", { precision: 4, scale: 1 }).notNull().default("2.0"),
+  subjectWindowSizeValue: numeric("subject_window_size_value", { precision: 6, scale: 2 }).notNull().default("140"),
+  subjectWindowSizeUnit: text("subject_window_size_unit").notNull().default("px"),
   subjectWindowItems: text("subject_window_items"),
   whatsappNumber: text("whatsapp_number"),
   siteTitle: text("site_title").notNull().default(""),

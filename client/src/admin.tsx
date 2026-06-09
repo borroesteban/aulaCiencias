@@ -162,7 +162,12 @@ interface Settings {
   backgroundImageUrl: string | null;
   faviconUrl: string | null;
   carouselImages: string | null;
+  educationalBackgroundImages: string | null;
   subjectWindowIntervalSeconds: number;
+  subjectWindowRotationSeconds: number;
+  subjectWindowPauseSeconds: number;
+  subjectWindowSizeValue: number;
+  subjectWindowSizeUnit: "px" | "cm";
   subjectWindowItems: string | null;
   whatsappNumber: string | null;
   siteTitle: string;
@@ -984,7 +989,12 @@ function SettingsAdmin() {
       backgroundImageUrl: textValue(form, "backgroundImageUrl"),
       faviconUrl: textValue(form, "faviconUrl"),
       carouselImages: textValue(form, "carouselImages"),
-      subjectWindowIntervalSeconds: Number(form.get("subjectWindowIntervalSeconds") || 5),
+      educationalBackgroundImages: textValue(form, "educationalBackgroundImages"),
+      subjectWindowIntervalSeconds: Math.max(1, Math.round(Number(form.get("subjectWindowRotationSeconds") || 1))),
+      subjectWindowRotationSeconds: Number(form.get("subjectWindowRotationSeconds") || 1),
+      subjectWindowPauseSeconds: Number(form.get("subjectWindowPauseSeconds") || 2),
+      subjectWindowSizeValue: Number(form.get("subjectWindowSizeValue") || 140),
+      subjectWindowSizeUnit: String(form.get("subjectWindowSizeUnit") || "px"),
       subjectWindowItems: null,
       whatsappNumber: textValue(form, "whatsappNumber"),
       siteTitle: String(form.get("siteTitle") || ""),
@@ -1022,9 +1032,16 @@ function SettingsAdmin() {
           <h3>Imágenes y ventanas</h3>
           <label>Imagen de fondo<input name="backgroundImageUrl" type="url" defaultValue={settings.backgroundImageUrl || ""} /></label>
           <label>Favicon<input name="faviconUrl" type="url" defaultValue={settings.faviconUrl || ""} /></label>
-          <label>Velocidad de ventanas (1 lenta, 50 rápida)<input name="subjectWindowIntervalSeconds" type="number" min="1" max="50" required defaultValue={settings.subjectWindowIntervalSeconds || 5} /></label>
+          <label>Duración del giro (segundos)<input name="subjectWindowRotationSeconds" type="number" min="0.5" max="20" step="0.1" required defaultValue={settings.subjectWindowRotationSeconds || 1} /></label>
+          <label>Pausa entre giros (segundos)<input name="subjectWindowPauseSeconds" type="number" min="0" max="20" step="0.1" required defaultValue={settings.subjectWindowPauseSeconds || 2} /></label>
+          <label>Tamaño de ventanitas<input name="subjectWindowSizeValue" type="number" min="1" max="500" step="0.1" required defaultValue={settings.subjectWindowSizeValue || 140} /></label>
+          <label>Unidad de tamaño<select name="subjectWindowSizeUnit" required defaultValue={settings.subjectWindowSizeUnit || "px"}>
+            <option value="px">Píxeles</option>
+            <option value="cm">Centímetros</option>
+          </select></label>
           <label>WhatsApp<input name="whatsappNumber" defaultValue={settings.whatsappNumber || ""} /></label>
           <label className="full-field">Fotos del carrusel<textarea name="carouselImages" placeholder="Una URL por línea" defaultValue={settings.carouselImages || ""} /></label>
+          <label className="full-field">Fondos educativos fijos<textarea name="educationalBackgroundImages" placeholder="Una URL 4K o alta resolución por línea" defaultValue={settings.educationalBackgroundImages || ""} /></label>
           <button className="primary-action" type="submit">Guardar configuración</button>
         </form>
       ) : <p className="muted">Cargando...</p>}
