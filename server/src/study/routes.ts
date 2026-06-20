@@ -2,7 +2,7 @@ import { asc, eq } from "drizzle-orm";
 import { Router } from "express";
 import { z } from "zod";
 import { getDb } from "../db/client.js";
-import { academicPrograms, institutions, programTopics } from "../db/schema.js";
+import { academicPrograms, institutions, programTopics, subjects, topics as lessonTopics } from "../db/schema.js";
 import { listQuerySchema } from "../http/schemas.js";
 import { validateQuery } from "../http/validation.js";
 
@@ -24,11 +24,17 @@ function normalize(value: string) {
     .trim();
 }
 
+function normalizeKey(value: string) {
+  return normalize(value)
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 function listParam(value: string | undefined) {
   return value
     ? value
         .split(",")
-        .map((item) => normalize(item))
+        .map((item) => normalizeKey(item))
         .filter(Boolean)
     : [];
 }
@@ -63,11 +69,18 @@ studyRouter.get("/academic-levels", async (_req, res, next) => {
 studyRouter.get("/topics", async (_req, res, next) => {
   try {
     const rows = await getDb()
-      .select({ name: programTopics.name, normalizedName: programTopics.normalizedName })
-      .from(programTopics)
-      .orderBy(asc(programTopics.normalizedName));
+      .select({ topicSubject: lessonTopics.subject, subjectName: subjects.name })
+      .from(lessonTopics)
+      .leftJoin(subjects, eq(lessonTopics.subjectId, subjects.id))
+      .where(eq(lessonTopics.isVisible, true))
+      .orderBy(asc(subjects.name), asc(lessonTopics.subject));
 
-    const topics = new Map(rows.map((row) => [row.normalizedName, row.name]));
+    const topics = new Map(
+      rows
+        .map((row) => row.subjectName || row.topicSubject)
+        .filter((name): name is string => Boolean(name))
+        .map((name) => [normalizeKey(name), name]),
+    );
 
     return res.json({ items: Array.from(topics, ([normalizedName, name]) => ({ normalizedName, name })) });
   } catch (error) {
@@ -94,9 +107,15 @@ studyRouter.get("/programs", validateQuery(programsQuerySchema), async (req, res
         sourceUrl: academicPrograms.sourceUrl,
         lastVerifiedAt: academicPrograms.lastVerifiedAt,
         institutionName: institutions.name,
+        institutionType: institutions.type,
+        institutionDescription: institutions.description,
+        institutionAddress: institutions.address,
+        institutionCity: institutions.city,
         institutionPhone: institutions.phone,
         institutionEmail: institutions.email,
         institutionWebsite: institutions.website,
+        institutionLatitude: institutions.latitude,
+        institutionLongitude: institutions.longitude,
       })
       .from(academicPrograms)
       .innerJoin(institutions, eq(academicPrograms.institutionId, institutions.id))

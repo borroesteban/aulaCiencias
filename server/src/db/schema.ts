@@ -1,4 +1,5 @@
 import {
+  type AnyPgColumn,
   boolean,
   date,
   integer,
@@ -217,6 +218,17 @@ export const bookingTimeSlots = pgTable("booking_time_slots", {
   updatedAt: updatedAtColumn(),
 });
 
+export const bookingFilterOptions = pgTable("booking_filter_options", {
+  id: idColumn(),
+  kind: text("kind").notNull(),
+  label: text("label").notNull(),
+  parentId: uuid("parent_id").references((): AnyPgColumn => bookingFilterOptions.id, { onDelete: "set null" }),
+  displayOrder: integer("display_order").notNull().default(0),
+  isVisible: boolean("is_visible").notNull().default(true),
+  createdAt: createdAtColumn(),
+  updatedAt: updatedAtColumn(),
+});
+
 export const schools = pgTable("schools", {
   id: idColumn(),
   name: text("name").notNull(),
@@ -370,13 +382,31 @@ export const bookings = pgTable("bookings", {
     .notNull()
     .references(() => students.id, { onDelete: "restrict" }),
   status: bookingStatus("status").notNull().default("PENDING_PAYMENT"),
+  bookingBatchId: uuid("booking_batch_id"),
+  estadoReserva: text("estado_reserva").notNull().default("pendiente_pago"),
+  estadoPago: text("estado_pago").notNull().default("pendiente"),
   selectedDate: date("selected_date").notNull(),
   startTime: time("start_time").notNull(),
   endTime: time("end_time").notNull(),
   totalTopics: integer("total_topics").notNull().default(0),
   totalAmount: numeric("total_amount", { precision: 12, scale: 2 }).notNull().default("0"),
   paymentAlias: text("payment_alias"),
+  mercadopagoPreferenceId: text("mercadopago_preference_id"),
+  mercadopagoPaymentId: text("mercadopago_payment_id"),
+  googleCalendarEventId: text("google_calendar_event_id"),
+  montoSenia: numeric("monto_senia", { precision: 12, scale: 2 }),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
   adminNotes: text("admin_notes"),
+  objetivos: jsonb("objetivos").$type<string[]>().notNull().default([]),
+  modalidad: text("modalidad").notNull().default("virtual"),
+  tipoClase: text("tipo_clase").notNull().default("privada"),
+  usaPackPromocional: boolean("usa_pack_promocional").notNull().default(false),
+  packSeleccionado: text("pack_seleccionado"),
+  horariosSeleccionados: jsonb("horarios_seleccionados")
+    .$type<Array<{ selectedDate: string; startTime: string; endTime: string; packId?: string | null }>>()
+    .notNull()
+    .default([]),
   createdAt: createdAtColumn(),
   updatedAt: updatedAtColumn(),
 });
@@ -395,6 +425,93 @@ export const bookingTopics = pgTable(
     pk: primaryKey({ columns: [table.bookingId, table.topicId] }),
   }),
 );
+
+export const studentSubjectProgress = pgTable("student_subject_progress", {
+  id: idColumn(),
+  studentId: uuid("student_id")
+    .notNull()
+    .references(() => students.id, { onDelete: "cascade" }),
+  subject: text("subject").notNull(),
+  progressPercent: integer("progress_percent").notNull().default(0),
+  status: text("status"),
+  teacherNotes: text("teacher_notes"),
+  createdAt: createdAtColumn(),
+  updatedAt: updatedAtColumn(),
+});
+
+export const studentSeenTopics = pgTable("student_seen_topics", {
+  id: idColumn(),
+  studentId: uuid("student_id")
+    .notNull()
+    .references(() => students.id, { onDelete: "cascade" }),
+  subject: text("subject").notNull(),
+  topic: text("topic").notNull(),
+  seenAt: timestamp("seen_at", { withTimezone: true }).notNull().defaultNow(),
+  bookingId: uuid("booking_id").references(() => bookings.id, { onDelete: "set null" }),
+});
+
+export const studentPendingExercises = pgTable("student_pending_exercises", {
+  id: idColumn(),
+  studentId: uuid("student_id")
+    .notNull()
+    .references(() => students.id, { onDelete: "cascade" }),
+  subject: text("subject").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  dueDate: timestamp("due_date", { withTimezone: true }),
+  status: text("status").notNull().default("pendiente"),
+  createdAt: createdAtColumn(),
+  updatedAt: updatedAtColumn(),
+});
+
+export const studentTeacherNotes = pgTable("student_teacher_notes", {
+  id: idColumn(),
+  studentId: uuid("student_id")
+    .notNull()
+    .references(() => students.id, { onDelete: "cascade" }),
+  subject: text("subject"),
+  note: text("note").notNull(),
+  visibleToFamily: boolean("visible_to_family").notNull().default(true),
+  createdAt: createdAtColumn(),
+  updatedAt: updatedAtColumn(),
+});
+
+export const studentDownloadEvents = pgTable("student_download_events", {
+  id: idColumn(),
+  studentId: uuid("student_id")
+    .notNull()
+    .references(() => students.id, { onDelete: "cascade" }),
+  downloadableId: uuid("downloadable_id").references(() => downloadableContents.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  downloadedAt: timestamp("downloaded_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const studentFamilySummaries = pgTable("student_family_summaries", {
+  id: idColumn(),
+  studentId: uuid("student_id")
+    .notNull()
+    .unique()
+    .references(() => students.id, { onDelete: "cascade" }),
+  currentWork: text("current_work"),
+  needsReinforcement: text("needs_reinforcement"),
+  generalStatus: text("general_status"),
+  createdAt: createdAtColumn(),
+  updatedAt: updatedAtColumn(),
+});
+
+export const bookingPayments = pgTable("booking_payments", {
+  id: idColumn(),
+  bookingBatchId: uuid("booking_batch_id").notNull(),
+  status: text("status").notNull().default("pending"),
+  provider: text("provider").notNull().default("mercadopago"),
+  preferenceId: text("preference_id"),
+  paymentId: text("payment_id"),
+  externalReference: text("external_reference"),
+  amount: numeric("amount", { precision: 12, scale: 2 }),
+  rawPayload: jsonb("raw_payload").$type<Record<string, unknown> | null>(),
+  createdAt: createdAtColumn(),
+  updatedAt: updatedAtColumn(),
+});
 
 export const appSettings = pgTable("app_settings", {
   id: idColumn(),

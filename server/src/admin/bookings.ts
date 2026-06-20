@@ -40,12 +40,28 @@ adminBookingsRouter.get("/", validateQuery(bookingsQuerySchema), async (req, res
       .select({
         id: bookings.id,
         status: bookings.status,
+        bookingBatchId: bookings.bookingBatchId,
+        estadoReserva: bookings.estadoReserva,
+        estadoPago: bookings.estadoPago,
         selectedDate: bookings.selectedDate,
         startTime: bookings.startTime,
         endTime: bookings.endTime,
         totalTopics: bookings.totalTopics,
         totalAmount: bookings.totalAmount,
         paymentAlias: bookings.paymentAlias,
+        mercadopagoPreferenceId: bookings.mercadopagoPreferenceId,
+        mercadopagoPaymentId: bookings.mercadopagoPaymentId,
+        googleCalendarEventId: bookings.googleCalendarEventId,
+        montoSenia: bookings.montoSenia,
+        paidAt: bookings.paidAt,
+        expiresAt: bookings.expiresAt,
+        adminNotes: bookings.adminNotes,
+        objetivos: bookings.objetivos,
+        modalidad: bookings.modalidad,
+        tipoClase: bookings.tipoClase,
+        usaPackPromocional: bookings.usaPackPromocional,
+        packSeleccionado: bookings.packSeleccionado,
+        horariosSeleccionados: bookings.horariosSeleccionados,
         createdAt: bookings.createdAt,
         updatedAt: bookings.updatedAt,
         studentId: students.id,
@@ -64,12 +80,28 @@ adminBookingsRouter.get("/", validateQuery(bookingsQuerySchema), async (req, res
       items: items.map((item) => ({
         id: item.id,
         status: item.status,
+        bookingBatchId: item.bookingBatchId,
+        estadoReserva: item.estadoReserva,
+        estadoPago: item.estadoPago,
         selectedDate: item.selectedDate,
         startTime: timeForResponse(item.startTime),
         endTime: timeForResponse(item.endTime),
         totalTopics: item.totalTopics,
         totalAmount: item.totalAmount,
         paymentAlias: item.paymentAlias,
+        mercadopagoPreferenceId: item.mercadopagoPreferenceId,
+        mercadopagoPaymentId: item.mercadopagoPaymentId,
+        googleCalendarEventId: item.googleCalendarEventId,
+        montoSenia: item.montoSenia,
+        paidAt: item.paidAt,
+        expiresAt: item.expiresAt,
+        adminNotes: item.adminNotes,
+        objetivos: item.objetivos,
+        modalidad: item.modalidad,
+        tipoClase: item.tipoClase,
+        usaPackPromocional: item.usaPackPromocional,
+        packSeleccionado: item.packSeleccionado,
+        horariosSeleccionados: item.horariosSeleccionados,
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
         student: {
@@ -106,10 +138,15 @@ adminBookingsRouter.patch(
   async (req, res, next) => {
     try {
       const { status, adminNotes } = req.body as z.infer<typeof updateStatusSchema>;
+      const estadoReserva = status === "CANCELLED" ? "cancelada" : "confirmada";
+      const estadoPago = status === "CANCELLED" ? "rechazado" : "aprobado";
       const [item] = await getDb()
         .update(bookings)
         .set({
           status,
+          estadoReserva,
+          estadoPago,
+          paidAt: status === "CANCELLED" ? null : new Date(),
           adminNotes,
           updatedAt: new Date(),
         })

@@ -1,11 +1,22 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { Router } from "express";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { getDb } from "../db/client.js";
-import { bookingTopics, bookings } from "../db/schema.js";
+import { bookingTopics, bookings, subjects, topics } from "../db/schema.js";
 import { attachOptionalUser } from "../auth/middleware.js";
-import { shortNullableTextSchema } from "../http/schemas.js";
+import { nullableTextSchema, shortNullableTextSchema } from "../http/schemas.js";
 import { validateBody, validateQuery } from "../http/validation.js";
+import {
+  calculateDepositAmount,
+  createPaymentHoldExpiration,
+  createPaymentPreferenceForBatch,
+} from "../payments/service.js";
+import {
+  canonicalBookingSubjectName,
+  isBookingAvailableLevel,
+  shouldListBookingTopicsForLevel,
+} from "./catalog.js";
 import {
   addHoursToTime,
   calculateBookingHours,
@@ -21,6 +32,23 @@ import {
 
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const timeSchema = z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/).transform(normalizeTime);
+const objetivoOptions = [
+  "preparar_examen",
+  "rendir_previa",
+  "acompanamiento",
+  "resolver_trabajos_practicos",
+  "ingreso_facultad",
+  "ingreso_profesorado",
+  "duda_puntual",
+] as const;
+const modalidadSchema = z.enum(["virtual", "presencial"]);
+const tipoClaseSchema = z.enum(["privada", "grupal"]);
+const horarioSeleccionadoSchema = z.object({
+  selectedDate: dateSchema,
+  startTime: timeSchema,
+  endTime: timeSchema,
+  packId: shortNullableTextSchema,
+});
 
 const availabilityQuerySchema = z.object({
   date: dateSchema,
@@ -34,10 +62,149 @@ const availabilityQuerySchema = z.object({
     .pipe(z.array(z.string().uuid())),
 });
 
-const createBookingSchema = z.object({
+const customTopicSchema = z.object({
+  title: z.string().trim().min(1).max(240),
+  subjectId: z.string().uuid().optional().nullable(),
+  subject: shortNullableTextSchema,
+  educationLevel: shortNullableTextSchema,
+  educationTrack: shortNullableTextSchema,
+  schoolYear: shortNullableTextSchema,
+});
+
+function nullableTopicCondition(column: any, value: string | null | undefined) {
+  return value ? eq(column, value) : isNull(column);
+}
+
+function publicSlug(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+async function ensureCustomSubject(db: any, subjectName: string | null | undefined) {
+  const canonicalSubjectName = canonicalBookingSubjectName(subjectName);
+
+  if (!canonicalSubjectName) {
+    return null;
+  }
+
+  const slug = publicSlug(canonicalSubjectName);
+  const [existingSubject] = await db
+    .select({ id: subjects.id, name: subjects.name })
+    .from(subjects)
+    .where(eq(subjects.slug, slug))
+    .limit(1);
+
+  if (existingSubject) {
+    return existingSubject;
+  }
+
+  const [createdSubject] = await db
+    .insert(subjects)
+    .values({
+      name: canonicalSubjectName,
+      slug,
+      description: "Materia habilitada para reservas.",
+      displayOrder: 9999,
+      isVisible: true,
+    })
+    .returning({ id: subjects.id, name: subjects.name });
+
+  return createdSubject;
+}
+
+async function ensureCustomTopics(db: any, customTopics: z.infer<typeof customTopicSchema>[]) {
+  const savedTopics = [];
+
+  for (const customTopic of customTopics) {
+    const title = customTopic.title.trim();
+    const subject = canonicalBookingSubjectName(customTopic.subject);
+    const educationLevel = customTopic.educationLevel ?? null;
+    const educationTrack = customTopic.educationTrack ?? null;
+    const schoolYear = customTopic.schoolYear ?? null;
+
+    if (!subject || !isBookingAvailableLevel(educationLevel)) {
+      throw new Error("INVALID_BOOKING_TOPIC_CONTEXT");
+    }
+
+    if (shouldListBookingTopicsForLevel(educationLevel) && !schoolYear) {
+      throw new Error("INVALID_BOOKING_TOPIC_CONTEXT");
+    }
+
+    const customSubject = await ensureCustomSubject(db, subject);
+    const subjectId = customSubject?.id ?? null;
+    const [existingTopic] = await db
+      .select({
+        id: topics.id,
+        title: topics.title,
+        subject: topics.subject,
+        educationLevel: topics.educationLevel,
+        educationTrack: topics.educationTrack,
+        schoolYear: topics.schoolYear,
+        estimatedMinutes: topics.estimatedMinutes,
+      })
+      .from(topics)
+      .where(
+        and(
+          eq(topics.title, title),
+          nullableTopicCondition(topics.subject, subject),
+          nullableTopicCondition(topics.educationLevel, educationLevel),
+          nullableTopicCondition(topics.educationTrack, educationTrack),
+          nullableTopicCondition(topics.schoolYear, schoolYear),
+        ),
+      )
+      .limit(1);
+
+    if (existingTopic) {
+      savedTopics.push(existingTopic);
+      continue;
+    }
+
+    const [createdTopic] = await db
+      .insert(topics)
+      .values({
+        title,
+        introduction: "Tema agregado desde una reserva.",
+        importance: "Temario cargado por solicitud del alumno al reservar horario.",
+        subject,
+        subjectId,
+        educationLevel,
+        educationTrack,
+        schoolYear,
+        estimatedMinutes: 60,
+        isVisible: true,
+      })
+      .returning({
+        id: topics.id,
+        title: topics.title,
+        subject: topics.subject,
+        educationLevel: topics.educationLevel,
+        educationTrack: topics.educationTrack,
+        schoolYear: topics.schoolYear,
+        estimatedMinutes: topics.estimatedMinutes,
+      });
+
+    savedTopics.push(createdTopic);
+  }
+
+  return savedTopics;
+}
+
+const createBookingBaseSchema = z.object({
   selectedDate: dateSchema,
   startTime: timeSchema,
-  topicIds: z.array(z.string().uuid()).min(1),
+  topicIds: z.array(z.string().uuid()).default([]),
+  customTopics: z.array(customTopicSchema).max(20).default([]),
+  objetivos: z.array(z.enum(objetivoOptions)).min(1).max(objetivoOptions.length),
+  modalidad: modalidadSchema,
+  tipoClase: tipoClaseSchema,
+  usaPackPromocional: z.boolean().default(false),
+  packSeleccionado: shortNullableTextSchema,
+  horariosSeleccionados: z.array(horarioSeleccionadoSchema).default([]),
+  adminNotes: nullableTextSchema,
   student: z.object({
     firstName: z.string().trim().min(1).max(120),
     lastName: z.string().trim().min(1).max(120),
@@ -49,11 +216,41 @@ const createBookingSchema = z.object({
   }),
 });
 
-const createBulkBookingSchema = createBookingSchema
+const createBookingSchema = createBookingBaseSchema.refine((value) => value.topicIds.length + value.customTopics.length > 0, {
+  message: "At least one topic is required",
+  path: ["topicIds"],
+}).refine((value) => !value.usaPackPromocional || Boolean(value.packSeleccionado && value.horariosSeleccionados.length > 0), {
+  message: "Pack bookings require a selected pack and selected schedules",
+  path: ["packSeleccionado"],
+});
+
+const createBulkBookingSchema = createBookingBaseSchema
   .omit({ selectedDate: true })
-  .extend({ selectedDates: z.array(dateSchema).min(1).max(16) });
+  .extend({ selectedDates: z.array(dateSchema).min(1).max(16) })
+  .refine((value) => value.topicIds.length + value.customTopics.length > 0, {
+    message: "At least one topic is required",
+    path: ["topicIds"],
+  })
+  .refine((value) => !value.usaPackPromocional || Boolean(value.packSeleccionado && value.horariosSeleccionados.length > 0), {
+    message: "Pack bookings require a selected pack and selected schedules",
+    path: ["packSeleccionado"],
+  });
 
 export const bookingsRouter = Router();
+
+function selectedScheduleValues(
+  dates: string[],
+  startTime: string,
+  endTime: string,
+  packId: string | null | undefined,
+) {
+  return dates.map((selectedDate) => ({
+    selectedDate,
+    startTime: timeForResponse(startTime),
+    endTime: timeForResponse(endTime),
+    packId: packId ?? null,
+  }));
+}
 
 bookingsRouter.get("/availability", validateQuery(availabilityQuerySchema), async (req, res, next) => {
   try {
@@ -116,20 +313,30 @@ bookingsRouter.post("/bookings", attachOptionalUser, validateBody(createBookingS
     }
 
     const db = getDb();
+    const bookingBatchId = randomUUID();
     const createdBooking = await db.transaction(async (tx) => {
       const settings = await getBookingSettings(tx);
-      const selectedTopics = await getVisibleTopicsByIds(tx, body.topicIds);
+      const customTopics = await ensureCustomTopics(tx, body.customTopics);
+      const allTopicIds = Array.from(new Set([...body.topicIds, ...customTopics.map((topic) => topic.id)]));
+      const selectedTopics = await getVisibleTopicsByIds(tx, allTopicIds);
       const selectedTopicIds = new Set(selectedTopics.map((topic) => topic.id));
-      const hasMissingTopic = body.topicIds.some((topicId) => !selectedTopicIds.has(topicId));
+      const hasMissingTopic = allTopicIds.some((topicId) => !selectedTopicIds.has(topicId));
 
       if (hasMissingTopic) {
         throw new Error("INVALID_TOPICS");
       }
 
-      const totalTopics = body.topicIds.length;
+      const totalTopics = allTopicIds.length;
       const bookingHours = calculateBookingHours(totalTopics, settings.topicsPerHour);
       const endTime = addHoursToTime(body.startTime, bookingHours);
+      const totalAmount = calculateTotalAmount(bookingHours, settings.pricePerHour);
       const booked = await countActiveBookingsForSlot(tx, body.selectedDate, body.startTime, endTime);
+      const horariosSeleccionados = selectedScheduleValues(
+        [body.selectedDate],
+        body.startTime,
+        endTime,
+        body.usaPackPromocional ? body.packSeleccionado : null,
+      );
 
       if (booked >= settings.maxStudentsPerSlot) {
         throw new Error("SLOT_FULL");
@@ -144,17 +351,29 @@ bookingsRouter.post("/bookings", attachOptionalUser, validateBody(createBookingS
         .values({
           studentId: student.id,
           status: "PENDING_PAYMENT",
+          bookingBatchId,
+          estadoReserva: "pendiente_pago",
+          estadoPago: "pendiente",
           selectedDate: body.selectedDate,
           startTime: body.startTime,
           endTime,
           totalTopics,
-          totalAmount: calculateTotalAmount(bookingHours, settings.pricePerHour),
+          totalAmount,
           paymentAlias: settings.mercadoPagoAlias,
+          montoSenia: calculateDepositAmount(totalAmount),
+          expiresAt: createPaymentHoldExpiration(),
+          adminNotes: body.adminNotes ?? null,
+          objetivos: body.objetivos,
+          modalidad: body.modalidad,
+          tipoClase: body.tipoClase,
+          usaPackPromocional: body.usaPackPromocional,
+          packSeleccionado: body.usaPackPromocional ? body.packSeleccionado : null,
+          horariosSeleccionados,
         })
         .returning();
 
       await tx.insert(bookingTopics).values(
-        body.topicIds.map((topicId) => ({
+        allTopicIds.map((topicId) => ({
           bookingId: booking.id,
           topicId,
         })),
@@ -172,23 +391,55 @@ bookingsRouter.post("/bookings", attachOptionalUser, validateBody(createBookingS
       };
     });
 
+    let preference = null;
+    try {
+      preference = await createPaymentPreferenceForBatch(db, bookingBatchId);
+    } catch (error) {
+      console.error("No se pudo crear la preferencia de Mercado Pago", { bookingBatchId, error });
+    }
+
     return res.status(201).json({
       booking: {
         id: createdBooking.booking.id,
         status: createdBooking.booking.status,
+        bookingBatchId: createdBooking.booking.bookingBatchId,
+        estadoReserva: createdBooking.booking.estadoReserva,
+        estadoPago: createdBooking.booking.estadoPago,
         selectedDate: createdBooking.booking.selectedDate,
         startTime: timeForResponse(createdBooking.booking.startTime),
         endTime: timeForResponse(createdBooking.booking.endTime),
         totalTopics: createdBooking.booking.totalTopics,
         totalAmount: createdBooking.booking.totalAmount,
+        montoSenia: createdBooking.booking.montoSenia,
+        expiresAt: createdBooking.booking.expiresAt,
         paymentAlias: createdBooking.booking.paymentAlias,
+        objetivos: createdBooking.booking.objetivos,
+        modalidad: createdBooking.booking.modalidad,
+        tipoClase: createdBooking.booking.tipoClase,
+        usaPackPromocional: createdBooking.booking.usaPackPromocional,
+        packSeleccionado: createdBooking.booking.packSeleccionado,
+        horariosSeleccionados: createdBooking.booking.horariosSeleccionados,
         topics: createdBooking.selectedTopics,
       },
-      payment: createdBooking.payment,
+      payment: {
+        ...createdBooking.payment,
+        bookingBatchId,
+        provider: "mercadopago",
+        preferenceId: preference?.preferenceId ?? null,
+        initPoint: preference?.initPoint ?? null,
+        sandboxInitPoint: preference?.sandboxInitPoint ?? null,
+        amount: preference?.amount ?? createdBooking.booking.montoSenia,
+        automatic: Boolean(preference?.initPoint),
+        reason: preference?.reason ?? null,
+      },
     });
   } catch (error) {
     if (error instanceof Error && error.message === "INVALID_TOPICS") {
       return res.status(400).json({ error: "INVALID_TOPICS" });
+    }
+
+    if (error instanceof Error && error.message === "INVALID_BOOKING_TOPIC_CONTEXT") {
+      return res.status(400).json({ error: "INVALID_BOOKING_TOPIC_CONTEXT" });
     }
 
     if (error instanceof Error && error.message === "SLOT_FULL") {
@@ -212,19 +463,29 @@ bookingsRouter.post("/bookings/bulk", attachOptionalUser, validateBody(createBul
     }
 
     const db = getDb();
+    const bookingBatchId = randomUUID();
     const created = await db.transaction(async (tx) => {
       const settings = await getBookingSettings(tx);
-      const selectedTopics = await getVisibleTopicsByIds(tx, body.topicIds);
+      const customTopics = await ensureCustomTopics(tx, body.customTopics);
+      const allTopicIds = Array.from(new Set([...body.topicIds, ...customTopics.map((topic) => topic.id)]));
+      const selectedTopics = await getVisibleTopicsByIds(tx, allTopicIds);
       const selectedTopicIds = new Set(selectedTopics.map((topic) => topic.id));
-      const hasMissingTopic = body.topicIds.some((topicId) => !selectedTopicIds.has(topicId));
+      const hasMissingTopic = allTopicIds.some((topicId) => !selectedTopicIds.has(topicId));
 
       if (hasMissingTopic) {
         throw new Error("INVALID_TOPICS");
       }
 
-      const totalTopics = body.topicIds.length;
+      const totalTopics = allTopicIds.length;
       const bookingHours = calculateBookingHours(totalTopics, settings.topicsPerHour);
       const endTime = addHoursToTime(body.startTime, bookingHours);
+      const totalAmount = calculateTotalAmount(bookingHours, settings.pricePerHour);
+      const horariosSeleccionados = selectedScheduleValues(
+        body.selectedDates,
+        body.startTime,
+        endTime,
+        body.usaPackPromocional ? body.packSeleccionado : null,
+      );
       const student = await createStudentForBooking(tx, {
         ...body.student,
         phone: body.student.phone ?? null,
@@ -243,17 +504,29 @@ bookingsRouter.post("/bookings/bulk", attachOptionalUser, validateBody(createBul
           .values({
             studentId: student.id,
             status: "PENDING_PAYMENT",
+            bookingBatchId,
+            estadoReserva: "pendiente_pago",
+            estadoPago: "pendiente",
             selectedDate,
             startTime: body.startTime,
             endTime,
             totalTopics,
-            totalAmount: calculateTotalAmount(bookingHours, settings.pricePerHour),
+            totalAmount,
             paymentAlias: settings.mercadoPagoAlias,
+            montoSenia: calculateDepositAmount(totalAmount),
+            expiresAt: createPaymentHoldExpiration(),
+            adminNotes: body.adminNotes ?? null,
+            objetivos: body.objetivos,
+            modalidad: body.modalidad,
+            tipoClase: body.tipoClase,
+            usaPackPromocional: body.usaPackPromocional,
+            packSeleccionado: body.usaPackPromocional ? body.packSeleccionado : null,
+            horariosSeleccionados,
           })
           .returning();
 
         await tx.insert(bookingTopics).values(
-          body.topicIds.map((topicId) => ({
+          allTopicIds.map((topicId) => ({
             bookingId: booking.id,
             topicId,
           })),
@@ -274,23 +547,55 @@ bookingsRouter.post("/bookings/bulk", attachOptionalUser, validateBody(createBul
       };
     });
 
+    let preference = null;
+    try {
+      preference = await createPaymentPreferenceForBatch(db, bookingBatchId);
+    } catch (error) {
+      console.error("No se pudo crear la preferencia de Mercado Pago", { bookingBatchId, error });
+    }
+
     return res.status(201).json({
       bookings: created.bookings.map((booking) => ({
         id: booking.id,
         status: booking.status,
+        bookingBatchId: booking.bookingBatchId,
+        estadoReserva: booking.estadoReserva,
+        estadoPago: booking.estadoPago,
         selectedDate: booking.selectedDate,
         startTime: timeForResponse(booking.startTime),
         endTime: timeForResponse(booking.endTime),
         totalTopics: booking.totalTopics,
         totalAmount: booking.totalAmount,
+        montoSenia: booking.montoSenia,
+        expiresAt: booking.expiresAt,
         paymentAlias: booking.paymentAlias,
+        objetivos: booking.objetivos,
+        modalidad: booking.modalidad,
+        tipoClase: booking.tipoClase,
+        usaPackPromocional: booking.usaPackPromocional,
+        packSeleccionado: booking.packSeleccionado,
+        horariosSeleccionados: booking.horariosSeleccionados,
         topics: created.selectedTopics,
       })),
-      payment: created.payment,
+      payment: {
+        ...created.payment,
+        bookingBatchId,
+        provider: "mercadopago",
+        preferenceId: preference?.preferenceId ?? null,
+        initPoint: preference?.initPoint ?? null,
+        sandboxInitPoint: preference?.sandboxInitPoint ?? null,
+        amount: preference?.amount ?? created.bookings[0]?.montoSenia ?? null,
+        automatic: Boolean(preference?.initPoint),
+        reason: preference?.reason ?? null,
+      },
     });
   } catch (error) {
     if (error instanceof Error && error.message === "INVALID_TOPICS") {
       return res.status(400).json({ error: "INVALID_TOPICS" });
+    }
+
+    if (error instanceof Error && error.message === "INVALID_BOOKING_TOPIC_CONTEXT") {
+      return res.status(400).json({ error: "INVALID_BOOKING_TOPIC_CONTEXT" });
     }
 
     if (error instanceof Error && error.message === "SLOT_FULL") {

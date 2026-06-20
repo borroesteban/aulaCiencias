@@ -1,10 +1,20 @@
 import "dotenv/config";
+import { readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import bcrypt from "bcryptjs";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, like, sql } from "drizzle-orm";
+import {
+  bookingAvailableLevels,
+  bookingSubjectCatalog,
+  canonicalBookingSubjectNames,
+  shouldListBookingTopicsForLevel,
+} from "../bookings/catalog.js";
 import { requireEnv } from "../config/env.js";
 import { closeDb, getDb } from "./client.js";
 import {
   appSettings,
+  bookingFilterOptions,
   bookingTimeSlots,
   contentBlocks,
   downloadableCategories,
@@ -37,10 +47,154 @@ function seedSlug(value: string) {
     .replace(/^-|-$/g, "");
 }
 
-const verifiedAt = "2026-06-09";
+interface FlatTemarioSeedRow {
+  level_id: string;
+  level_name: string;
+  plan: string;
+  anio: string;
+  orientacion: string;
+  institucion: string;
+  carrera: string;
+  subject: string;
+  axis: string;
+  topic: string;
+  status: string;
+}
+
+function parseCsvLine(line: string) {
+  const values: string[] = [];
+  let current = "";
+  let isQuoted = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const nextChar = line[index + 1];
+
+    if (char === '"' && isQuoted && nextChar === '"') {
+      current += '"';
+      index += 1;
+      continue;
+    }
+
+    if (char === '"') {
+      isQuoted = !isQuoted;
+      continue;
+    }
+
+    if (char === "," && !isQuoted) {
+      values.push(current);
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  values.push(current);
+  return values;
+}
+
+async function loadFlatTemarioSeedRows() {
+  const seedPath = resolve(dirname(fileURLToPath(import.meta.url)), "data/codex_temarios_flat_import.csv");
+  const csv = await readFile(seedPath, "utf8");
+  const [headerLine, ...lines] = csv.trim().split(/\r?\n/);
+  const headers = parseCsvLine(headerLine) as (keyof FlatTemarioSeedRow)[];
+
+  return lines
+    .map((line) => {
+      const values = parseCsvLine(line);
+      return Object.fromEntries(headers.map((header, index) => [header, values[index]?.trim() ?? ""])) as unknown as FlatTemarioSeedRow;
+    })
+    .filter((row) => row.subject && row.topic);
+}
+
+function displayLevel(row: FlatTemarioSeedRow) {
+  const level = normalizeSeedKey(row.level_name);
+
+  if (level.includes("primaria")) return "Primaria";
+  if (level.includes("secundaria")) return "Secundaria";
+  if (level.includes("universitaria")) return "Universitaria";
+  if (level.includes("superior")) return "Terciaria";
+
+  return row.level_name || row.level_id || "General";
+}
+
+function formatDisplayYear(value: string) {
+  if (/^\d+$/.test(value)) return `${value}.º año`;
+
+  return value;
+}
+
+function displayYears(row: FlatTemarioSeedRow) {
+  const value = row.anio.trim();
+  const rangeMatch = value.match(/^(\d+)\s*-\s*(\d+)$/);
+
+  if (!value) return [null];
+
+  if (rangeMatch) {
+    const start = Number(rangeMatch[1]);
+    const end = Number(rangeMatch[2]);
+
+    if (Number.isInteger(start) && Number.isInteger(end) && start <= end && end - start <= 12) {
+      return Array.from({ length: end - start + 1 }, (_, index) => `${start + index}.º año`);
+    }
+  }
+
+  return [formatDisplayYear(value)];
+}
+
+function displayTrack(row: FlatTemarioSeedRow) {
+  const level = normalizeSeedKey(row.level_name);
+  const orientation = row.orientacion.trim();
+  const career = row.carrera.trim();
+
+  if (orientation) {
+    return orientation.replace(/^Orientación en\s+/i, "");
+  }
+
+  if (level.includes("profesorado")) {
+    return career || "Profesorado";
+  }
+
+  if (level.includes("tecnicatura") || level.includes("formacion profesional")) {
+    if (normalizeSeedKey(career).includes("formacion profesional")) return "Formación Profesional";
+    return career || "Tecnicatura";
+  }
+
+  if (level.includes("universitaria")) {
+    return career || "Universitaria";
+  }
+
+  return null;
+}
+
+function sentenceCase(value: string) {
+  const trimmed = value.trim();
+
+  return trimmed ? `${trimmed[0].toUpperCase()}${trimmed.slice(1)}` : trimmed;
+}
+
+function importedTopicTitle(row: FlatTemarioSeedRow) {
+  return sentenceCase(row.topic);
+}
+
+function importedTopicNotes(row: FlatTemarioSeedRow) {
+  return [
+    row.status ? `Estado: ${row.status}` : null,
+    row.plan ? `Plan: ${row.plan}` : null,
+    row.institucion ? `Institución: ${row.institucion}` : null,
+    row.carrera ? `Carrera: ${row.carrera}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+const verifiedAt = "2026-06-16";
 
 const initialDownloadableCategories = [
   { name: "Biología", slug: "biologia" },
+  { name: "Física", slug: "fisica" },
+  { name: "General", slug: "general" },
   { name: "Química", slug: "quimica" },
   { name: "Matemática", slug: "matematica" },
   { name: "Primaria", slug: "primaria" },
@@ -49,37 +203,76 @@ const initialDownloadableCategories = [
 
 const initialDownloadables = [
   {
-    title: "Guía placeholder de laboratorio",
-    description: "Ficha editable para cargar consignas, materiales y fotos de prácticas de laboratorio.",
-    imageUrl: "https://images.unsplash.com/photo-1581093458791-9d15482442f6?auto=format&fit=crop&w=900&q=80",
-    categorySlug: "quimica",
+    title: "Jerarquía de operaciones",
+    description: "Infografía de matemática sobre cálculos combinados, prioridad de operaciones y regla de signos.",
+    imageUrl: "/materiales/jerarquia-operaciones.jpeg",
+    categorySlug: "matematica",
     isFeatured: true,
     displayOrder: 10,
   },
   {
-    title: "Mapa conceptual placeholder de células",
-    description: "Recurso de ejemplo para reemplazar por resúmenes, esquemas o imágenes de clase.",
-    imageUrl: "https://images.unsplash.com/photo-1579154204601-01588f351e67?auto=format&fit=crop&w=900&q=80",
+    title: "Qué es la biología",
+    description: "Infografía introductoria sobre biología, seres vivos y características de los organismos.",
+    imageUrl: "/materiales/que-es-biologia.jpeg",
     categorySlug: "biologia",
     isFeatured: true,
     displayOrder: 20,
   },
   {
-    title: "Ejercicios placeholder de matemática",
-    description: "Banco inicial para subir guías de práctica, actividades resueltas o materiales descargables.",
-    imageUrl: "https://images.unsplash.com/photo-1509228468518-180dd4864904?auto=format&fit=crop&w=900&q=80",
+    title: "Propiedades de la potenciación y radicación",
+    description: "Resumen visual de propiedades de potencias y raíces para simplificar expresiones.",
+    imageUrl: "/materiales/potenciacion-radicacion.jpeg",
     categorySlug: "matematica",
-    isFeatured: false,
+    isFeatured: true,
     displayOrder: 30,
   },
   {
-    title: "Foto placeholder de clase",
-    description: "Imagen de muestra para reemplazar por fotos propias del aula, pizarrón o materiales.",
-    imageUrl: "https://images.unsplash.com/photo-1509062522246-3755977927d7?auto=format&fit=crop&w=900&q=80",
-    categorySlug: "secundaria",
+    title: "Conceptos básicos de química",
+    description: "Infografía de química sobre materia, sistemas materiales, estados y cambios de estado.",
+    imageUrl: "/materiales/conceptos-basicos-quimica.jpeg",
+    categorySlug: "quimica",
     isFeatured: true,
     displayOrder: 40,
   },
+  {
+    title: "Propiedades y cambios de la materia",
+    description: "Material de química sobre propiedades intensivas, extensivas, cambios físicos y cambios químicos.",
+    imageUrl: "/materiales/propiedades-cambios-materia.jpeg",
+    categorySlug: "quimica",
+    isFeatured: true,
+    displayOrder: 50,
+  },
+  {
+    title: "Sistema internacional de unidades",
+    description: "Infografía de física sobre unidades básicas del SI, magnitudes y prefijos de medida.",
+    imageUrl: "/materiales/sistema-internacional-unidades.jpeg",
+    categorySlug: "fisica",
+    isFeatured: true,
+    displayOrder: 60,
+  },
+  {
+    title: "Cinemática",
+    description: "Material de física sobre movimiento, MRU, MRUV, magnitudes y ecuaciones fundamentales.",
+    imageUrl: "/materiales/cinematica.jpeg",
+    categorySlug: "fisica",
+    isFeatured: true,
+    displayOrder: 70,
+  },
+  {
+    title: "Preparación para previas",
+    description: "Flyer general de aulaCiencias para apoyo en Matemática, Físico-Química, Biología y Ciencias de la Tierra.",
+    imageUrl: "/materiales/previa-aula-ciencias.jpeg",
+    categorySlug: "general",
+    isFeatured: true,
+    displayOrder: 80,
+  },
+];
+
+const legacyDownloadableTitlesToHide = [
+  "Guía placeholder de laboratorio",
+  "Mapa conceptual placeholder de células",
+  "Ejercicios placeholder de matemática",
+  "Foto placeholder de clase",
 ];
 
 const initialSubjects = [
@@ -89,7 +282,7 @@ const initialSubjects = [
   { name: "Física", slug: "fisica", description: "Temas de energía, movimiento, fuerzas y ondas.", displayOrder: 40 },
   { name: "Astronomía", slug: "astronomia", description: "Temas de planetas, estrellas y universo.", displayOrder: 50 },
   { name: "Geografía", slug: "geografia", description: "Temas de mapas, clima, relieve y territorio.", displayOrder: 60 },
-  { name: "Ciencias naturales", slug: "ciencias-naturales", description: "Temas integrados sobre naturaleza, vida y materia.", displayOrder: 70 },
+  { name: "Ciencias Naturales", slug: "ciencias-naturales", description: "Temas integrados sobre naturaleza, vida y materia.", displayOrder: 70 },
   { name: "Tecnología", slug: "tecnologia", description: "Temas de técnica, materiales, circuitos y proyectos.", displayOrder: 80 },
 ];
 
@@ -113,7 +306,7 @@ const initialInstitutions = [
     description: "Sede Gualeguaychú de la Facultad de Ciencia y Tecnología de la Universidad Autónoma de Entre Ríos.",
     address: "Blvr. Montana y Nogoyá",
     city: "Gualeguaychú",
-    phone: null,
+    phone: "(0343) 4975141 / 4975066",
     email: "fcyt_gualeguaychu@uader.edu.ar",
     website: "https://fcyt.uader.edu.ar/sede-y-extension-aul/gualeguaychu/",
     latitude: null,
@@ -124,7 +317,7 @@ const initialInstitutions = [
     programs: [
       {
         name: "Tecnicatura Universitaria en Gestión Ambiental",
-        academicLevel: "tecnicatura",
+        academicLevel: "Tecnicatura",
         titleGranted: "Técnico/a Universitario/a en Gestión Ambiental",
         duration: "3 años",
         modality: "presencial",
@@ -133,7 +326,7 @@ const initialInstitutions = [
       },
       {
         name: "Licenciatura en Gestión Ambiental",
-        academicLevel: "licenciatura",
+        academicLevel: "Licenciatura",
         titleGranted: "Licenciado/a en Gestión Ambiental",
         duration: "4 años",
         modality: "presencial",
@@ -159,7 +352,7 @@ const initialInstitutions = [
     programs: [
       {
         name: "Abogacía",
-        academicLevel: "grado",
+        academicLevel: "Abogacía",
         titleGranted: "Abogado/a",
         duration: "5 años",
         modality: "presencial",
@@ -168,7 +361,7 @@ const initialInstitutions = [
       },
       {
         name: "Licenciatura en Comercio Internacional",
-        academicLevel: "licenciatura",
+        academicLevel: "Licenciatura",
         titleGranted: "Licenciado/a en Comercio Internacional",
         duration: "4 años",
         modality: "presencial",
@@ -177,7 +370,7 @@ const initialInstitutions = [
       },
       {
         name: "Licenciatura en Comercialización y Gestión de Negocios",
-        academicLevel: "licenciatura",
+        academicLevel: "Licenciatura",
         titleGranted: "Licenciado/a en Comercialización y Gestión de Negocios",
         duration: "4 años",
         modality: "presencial",
@@ -186,12 +379,92 @@ const initialInstitutions = [
       },
       {
         name: "Profesorado Universitario de Educación Física",
-        academicLevel: "profesorado",
+        academicLevel: "Profesorado",
         titleGranted: "Profesor/a Universitario/a de Educación Física",
         duration: "4 años",
         modality: "presencial",
         description: "Profesorado universitario orientado a educación física y ciencias del movimiento.",
         topics: ["Biología", "Anatomía", "Salud", "Pedagogía"],
+      },
+    ],
+  },
+  {
+    name: "UNER - Facultad de Bromatología",
+    type: "universidad",
+    description: "Facultad de la Universidad Nacional de Entre Ríos con sede en Gualeguaychú.",
+    address: "25 de Mayo 709 / Pte. Perón 1154",
+    city: "Gualeguaychú",
+    phone: "(03446) 426115 / 426203 / 426345 / 426148",
+    email: "soporte.fb@uner.edu.ar",
+    website: "https://www.fb.uner.edu.ar/carreras-3/",
+    latitude: null,
+    longitude: null,
+    sourceName: "UNER Facultad de Bromatología - Carreras",
+    sourceUrl: "https://www.fb.uner.edu.ar/carreras-3/",
+    lastVerifiedAt: verifiedAt,
+    programs: [
+      {
+        name: "Tecnicatura Universitaria en Química",
+        academicLevel: "Tecnicatura",
+        titleGranted: "Técnico/a Universitario/a en Química",
+        duration: null,
+        modality: "presencial",
+        description: "Carrera de pregrado de la Facultad de Bromatología orientada a química aplicada y laboratorio.",
+        topics: ["Química", "Laboratorio", "Matemática"],
+      },
+      {
+        name: "Tecnicatura en Control Bromatológico",
+        academicLevel: "Tecnicatura",
+        titleGranted: "Técnico/a en Control Bromatológico",
+        duration: null,
+        modality: "a distancia",
+        description: "Carrera de pregrado orientada al control bromatológico de alimentos.",
+        topics: ["Química", "Biología", "Laboratorio"],
+      },
+      {
+        name: "Licenciatura en Bromatología",
+        academicLevel: "Licenciatura",
+        titleGranted: "Licenciado/a en Bromatología",
+        duration: null,
+        modality: "presencial",
+        description: "Carrera universitaria centrada en alimentos, análisis bromatológico y salud pública.",
+        topics: ["Química", "Biología", "Laboratorio", "Estadística"],
+      },
+      {
+        name: "Licenciatura en Nutrición",
+        academicLevel: "Licenciatura",
+        titleGranted: "Licenciado/a en Nutrición",
+        duration: null,
+        modality: "presencial",
+        description: "Formación universitaria en nutrición, alimentación, salud y ciencias biológicas.",
+        topics: ["Biología", "Química", "Salud", "Estadística"],
+      },
+      {
+        name: "Farmacia",
+        academicLevel: "Farmacia",
+        titleGranted: "Farmacéutico/a",
+        duration: null,
+        modality: "presencial",
+        description: "Carrera universitaria de farmacia con base en química, biología y ciencias de la salud.",
+        topics: ["Química", "Biología", "Laboratorio"],
+      },
+      {
+        name: "Bioquímica",
+        academicLevel: "Bioquímica",
+        titleGranted: "Bioquímico/a",
+        duration: null,
+        modality: "presencial",
+        description: "Carrera universitaria orientada al análisis bioquímico, laboratorio y ciencias biomédicas.",
+        topics: ["Biología", "Química", "Laboratorio"],
+      },
+      {
+        name: "Medicina Veterinaria",
+        academicLevel: "Medicina Veterinaria",
+        titleGranted: "Médico/a Veterinario/a",
+        duration: null,
+        modality: "presencial",
+        description: "Carrera universitaria de ciencias veterinarias disponible en la Facultad de Bromatología.",
+        topics: ["Biología", "Química", "Salud"],
       },
     ],
   },
@@ -238,7 +511,7 @@ const initialContentBlocks = [
   },
   {
     key: "home.booking",
-    eyebrow: "Te lo explica Silvi",
+    eyebrow: "¿Qué necesitás reforzar?",
     title: "Selecciona temarios y reserva un horario",
     body: "Placeholder para explicar condiciones de reserva, pago, cupos y canales de contacto.",
     imageUrl: "https://images.unsplash.com/photo-1577896851231-70ef18881754?auto=format&fit=crop&w=1200&q=80",
@@ -723,6 +996,7 @@ async function seed() {
   const email = process.env.SUPERADMIN_EMAIL ?? "admin@aulaciencias.local";
   const password = requireEnv("SUPERADMIN_PASSWORD");
   const passwordHash = await bcrypt.hash(password, 12);
+  const importedTemarioRows = await loadFlatTemarioSeedRows();
 
   await db
     .insert(users)
@@ -814,6 +1088,27 @@ async function seed() {
       });
   }
 
+  for (const [index, subject] of bookingSubjectCatalog.entries()) {
+    await db
+      .insert(subjects)
+      .values({
+        name: subject.name,
+        slug: subject.slug,
+        description: subject.description,
+        displayOrder: 10 + index * 10,
+        isVisible: true,
+      })
+      .onConflictDoUpdate({
+        target: subjects.slug,
+        set: {
+          name: subject.name,
+          description: subject.description,
+          displayOrder: 10 + index * 10,
+          isVisible: true,
+        },
+      });
+  }
+
   const seededSubjects = await db.select({ id: subjects.id, slug: subjects.slug, name: subjects.name }).from(subjects);
   const subjectBySlug = new Map(seededSubjects.map((subject) => [subject.slug, subject]));
   const subjectByName = new Map(
@@ -826,6 +1121,15 @@ async function seed() {
     .select({ id: downloadableCategories.id, slug: downloadableCategories.slug })
     .from(downloadableCategories);
   const categoryBySlug = new Map(seededCategories.map((category) => [category.slug, category]));
+  const bookingTemarioRows = importedTemarioRows.flatMap((row) => {
+    const educationLevel = displayLevel(row);
+
+    if (!shouldListBookingTopicsForLevel(educationLevel)) {
+      return [];
+    }
+
+    return canonicalBookingSubjectNames(row.subject).map((subjectName) => ({ row, subjectName }));
+  });
 
   for (const slot of initialBookingTimeSlots) {
     await db
@@ -836,6 +1140,123 @@ async function seed() {
         displayOrder: (initialBookingTimeSlots.indexOf(slot) + 1) * 10,
       })
       .onConflictDoNothing();
+  }
+
+  await db.update(bookingFilterOptions).set({ isVisible: false, updatedAt: new Date() });
+
+  const bookingFilterByKey = new Map<string, string>();
+  const existingBookingFilterOptions = await db
+    .select({
+      id: bookingFilterOptions.id,
+      kind: bookingFilterOptions.kind,
+      label: bookingFilterOptions.label,
+      parentId: bookingFilterOptions.parentId,
+    })
+    .from(bookingFilterOptions);
+
+  existingBookingFilterOptions.forEach((option) => {
+    bookingFilterByKey.set(`${option.kind}|${option.parentId ?? ""}|${option.label}`, option.id);
+  });
+
+  async function ensureBookingFilterOption(kind: "level" | "year" | "track", label: string, parentId: string | null, displayOrder: number) {
+    const key = `${kind}|${parentId ?? ""}|${label}`;
+    const existingId = bookingFilterByKey.get(key);
+
+    if (existingId) {
+      await db
+        .update(bookingFilterOptions)
+        .set({ displayOrder, isVisible: true, updatedAt: new Date() })
+        .where(eq(bookingFilterOptions.id, existingId));
+      return existingId;
+    }
+
+    const conditions = [
+      eq(bookingFilterOptions.kind, kind),
+      eq(bookingFilterOptions.label, label),
+      parentId ? eq(bookingFilterOptions.parentId, parentId) : isNull(bookingFilterOptions.parentId),
+    ];
+    const [existing] = await db
+      .select({ id: bookingFilterOptions.id })
+      .from(bookingFilterOptions)
+      .where(and(...conditions))
+      .limit(1);
+
+    if (existing) {
+      bookingFilterByKey.set(key, existing.id);
+      await db
+        .update(bookingFilterOptions)
+        .set({ displayOrder, isVisible: true, updatedAt: new Date() })
+        .where(eq(bookingFilterOptions.id, existing.id));
+      return existing.id;
+    }
+
+    const [created] = await db
+      .insert(bookingFilterOptions)
+      .values({ kind, label, parentId, displayOrder, isVisible: true })
+      .returning({ id: bookingFilterOptions.id });
+
+    bookingFilterByKey.set(key, created.id);
+    return created.id;
+  }
+
+  const levelOrder = [...bookingAvailableLevels];
+  const levelIds = new Map<string, string>();
+  const importedLevels = [...bookingAvailableLevels].sort((a, b) => {
+    const left = levelOrder.indexOf(a);
+    const right = levelOrder.indexOf(b);
+
+    return (left === -1 ? 999 : left) - (right === -1 ? 999 : right) || a.localeCompare(b, "es-AR");
+  });
+
+  for (const [levelIndex, level] of importedLevels.entries()) {
+    const id = await ensureBookingFilterOption("level", level, null, (levelIndex + 1) * 10);
+    levelIds.set(level, id);
+  }
+
+  const yearIds = new Map<string, string>();
+  const importedYears = Array.from(
+    new Set(
+      bookingTemarioRows
+        .flatMap(({ row }) => {
+          const level = displayLevel(row);
+          return displayYears(row).map((year) => (year ? `${level}|${year}` : ""));
+        })
+        .filter(Boolean),
+    ),
+  ).sort((a, b) => a.localeCompare(b, "es-AR", { numeric: true }));
+
+  for (const [yearIndex, key] of importedYears.entries()) {
+    const [level, year] = key.split("|");
+    const parentId = levelIds.get(level);
+
+    if (!parentId) continue;
+
+    const id = await ensureBookingFilterOption("year", year, parentId, (yearIndex + 1) * 10);
+    yearIds.set(key, id);
+  }
+
+  const importedTracks = Array.from(
+    new Set(
+      bookingTemarioRows
+        .flatMap(({ row }) => {
+          const track = displayTrack(row);
+
+          if (!track) return [""];
+
+          const level = displayLevel(row);
+          return displayYears(row).map((year) => `${level}|${year ?? ""}|${track}`);
+        })
+        .filter(Boolean),
+    ),
+  ).sort((a, b) => a.localeCompare(b, "es-AR", { numeric: true }));
+
+  for (const [trackIndex, key] of importedTracks.entries()) {
+    const [level, year, track] = key.split("|");
+    const parentId = (year ? yearIds.get(`${level}|${year}`) : null) ?? levelIds.get(level);
+
+    if (!parentId) continue;
+
+    await ensureBookingFilterOption("track", track, parentId, (trackIndex + 1) * 10);
   }
 
   for (const block of initialContentBlocks) {
@@ -885,6 +1306,13 @@ async function seed() {
         isVisible: true,
       });
     }
+  }
+
+  for (const title of legacyDownloadableTitlesToHide) {
+    await db
+      .update(downloadableContents)
+      .set({ isVisible: false, updatedAt: new Date() })
+      .where(eq(downloadableContents.title, title));
   }
 
   for (const highlight of initialSubjectHighlights) {
@@ -1050,6 +1478,53 @@ async function seed() {
         subjectId: subject?.id ?? null,
         isVisible: true,
       });
+    }
+  }
+
+  await db.update(topics).set({ isVisible: false, updatedAt: new Date() }).where(like(topics.importance, "Estado:%"));
+
+  for (const { row, subjectName } of bookingTemarioRows) {
+    const title = importedTopicTitle(row);
+    const educationLevel = displayLevel(row);
+    const educationTrack = displayTrack(row);
+    const relatedCareers = [row.institucion, row.carrera].filter(Boolean).join(" · ") || null;
+    const subject = subjectByName.get(subjectName) ?? subjectByName.get(normalizeSeedKey(subjectName));
+
+    for (const schoolYear of displayYears(row)) {
+      const values = {
+        title,
+        introduction: row.axis ? `Eje: ${row.axis}` : null,
+        importance: importedTopicNotes(row) || null,
+        subject: subjectName,
+        subjectId: subject?.id ?? null,
+        educationLevel,
+        educationTrack,
+        schoolYear,
+        relatedCareers,
+        estimatedMinutes: 60,
+        isVisible: true,
+        updatedAt: new Date(),
+      };
+      const [existingTopic] = await db
+        .select({ id: topics.id })
+        .from(topics)
+        .where(
+          and(
+            eq(topics.title, title),
+            eq(topics.subject, subjectName),
+            eq(topics.educationLevel, educationLevel),
+            schoolYear ? eq(topics.schoolYear, schoolYear) : isNull(topics.schoolYear),
+            educationTrack ? eq(topics.educationTrack, educationTrack) : isNull(topics.educationTrack),
+            relatedCareers ? eq(topics.relatedCareers, relatedCareers) : isNull(topics.relatedCareers),
+          ),
+        )
+        .limit(1);
+
+      if (existingTopic) {
+        await db.update(topics).set(values).where(eq(topics.id, existingTopic.id));
+      } else {
+        await db.insert(topics).values(values);
+      }
     }
   }
 

@@ -1,6 +1,7 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { Router } from "express";
 import { z } from "zod";
+import { bookingCatalogTopicLevels, bookingSubjectNames } from "../bookings/catalog.js";
 import { getDb } from "../db/client.js";
 import { topics } from "../db/schema.js";
 import { idParamsSchema, listQuerySchema } from "../http/schemas.js";
@@ -35,7 +36,11 @@ topicsRouter.get("/", validateQuery(topicsQuerySchema), async (req, res, next) =
   try {
     const { limit, offset, subject, educationLevel, educationTrack, schoolYear } =
       req.query as unknown as z.infer<typeof topicsQuerySchema>;
-    const conditions = [eq(topics.isVisible, true)];
+    const conditions = [
+      eq(topics.isVisible, true),
+      inArray(topics.subject, bookingSubjectNames),
+      inArray(topics.educationLevel, [...bookingCatalogTopicLevels]),
+    ];
 
     if (subject) {
       conditions.push(eq(topics.subject, subject));

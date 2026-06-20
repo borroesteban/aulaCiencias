@@ -1,10 +1,10 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 import { Router } from "express";
 import { z } from "zod";
 import { getDb } from "../db/client.js";
 import { downloadableCategories, downloadableContents } from "../db/schema.js";
-import { listQuerySchema } from "../http/schemas.js";
-import { validateQuery } from "../http/validation.js";
+import { idParamsSchema, listQuerySchema } from "../http/schemas.js";
+import { validateParams, validateQuery } from "../http/validation.js";
 
 const downloadablesQuerySchema = listQuerySchema.extend({
   categoryId: z.string().uuid().optional(),
@@ -75,6 +75,62 @@ downloadablesRouter.get("/recent", validateQuery(listQuerySchema), async (req, r
       .offset(offset);
 
     return res.json({ items });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+downloadablesRouter.get("/:id", validateParams(idParamsSchema), async (req, res, next) => {
+  try {
+    const db = getDb();
+    const [item] = await db
+      .select(downloadableFields)
+      .from(downloadableContents)
+      .innerJoin(
+        downloadableCategories,
+        eq(downloadableContents.categoryId, downloadableCategories.id),
+      )
+      .where(and(eq(downloadableContents.id, req.params.id), eq(downloadableContents.isVisible, true)))
+      .limit(1);
+
+    if (!item) {
+      return res.status(404).json({ error: "NOT_FOUND" });
+    }
+
+    const related = await db
+      .select(downloadableFields)
+      .from(downloadableContents)
+      .innerJoin(
+        downloadableCategories,
+        eq(downloadableContents.categoryId, downloadableCategories.id),
+      )
+      .where(
+        and(
+          eq(downloadableContents.isVisible, true),
+          eq(downloadableContents.categoryId, item.categoryId),
+          ne(downloadableContents.id, item.id),
+        ),
+      )
+      .orderBy(desc(downloadableContents.isFeatured), desc(downloadableContents.createdAt))
+      .limit(3);
+
+    if (related.length < 3) {
+      const fallback = await db
+        .select(downloadableFields)
+        .from(downloadableContents)
+        .innerJoin(
+          downloadableCategories,
+          eq(downloadableContents.categoryId, downloadableCategories.id),
+        )
+        .where(and(eq(downloadableContents.isVisible, true), ne(downloadableContents.id, item.id)))
+        .orderBy(desc(downloadableContents.isFeatured), desc(downloadableContents.createdAt))
+        .limit(8);
+
+      const relatedIds = new Set(related.map((downloadable) => downloadable.id));
+      related.push(...fallback.filter((downloadable) => !relatedIds.has(downloadable.id)).slice(0, 3 - related.length));
+    }
+
+    return res.json({ item, related });
   } catch (error) {
     return next(error);
   }

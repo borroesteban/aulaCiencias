@@ -1,9 +1,9 @@
-import { and, count, eq, inArray, ne } from "drizzle-orm";
+import { and, count, eq, gt, inArray, ne, or } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "../db/schema.js";
 import { appSettings, bookingTopics, bookings, guardians, studentGuardians, students, topics } from "../db/schema.js";
 
-export const activeBookingStatuses = ["PENDING_PAYMENT", "PAID", "CONFIRMED"] as const;
+export const activeBookingStatuses = ["PAID", "CONFIRMED"] as const;
 
 export interface BookingSettings {
   pricePerHour: number;
@@ -70,7 +70,11 @@ export async function countActiveBookingsForSlot(
         eq(bookings.selectedDate, selectedDate),
         eq(bookings.startTime, normalizeTime(startTime)),
         eq(bookings.endTime, normalizeTime(endTime)),
-        inArray(bookings.status, [...activeBookingStatuses]),
+        or(
+          inArray(bookings.status, [...activeBookingStatuses]),
+          eq(bookings.estadoReserva, "confirmada"),
+          and(eq(bookings.estadoReserva, "pendiente_pago"), gt(bookings.expiresAt, new Date())),
+        ),
       ),
     );
 
@@ -190,13 +194,28 @@ export async function getBookingDetail(db: NodePgDatabase<typeof schema>, id: st
     .select({
       id: bookings.id,
       status: bookings.status,
+      bookingBatchId: bookings.bookingBatchId,
+      estadoReserva: bookings.estadoReserva,
+      estadoPago: bookings.estadoPago,
       selectedDate: bookings.selectedDate,
       startTime: bookings.startTime,
       endTime: bookings.endTime,
       totalTopics: bookings.totalTopics,
       totalAmount: bookings.totalAmount,
       paymentAlias: bookings.paymentAlias,
+      mercadopagoPreferenceId: bookings.mercadopagoPreferenceId,
+      mercadopagoPaymentId: bookings.mercadopagoPaymentId,
+      googleCalendarEventId: bookings.googleCalendarEventId,
+      montoSenia: bookings.montoSenia,
+      paidAt: bookings.paidAt,
+      expiresAt: bookings.expiresAt,
       adminNotes: bookings.adminNotes,
+      objetivos: bookings.objetivos,
+      modalidad: bookings.modalidad,
+      tipoClase: bookings.tipoClase,
+      usaPackPromocional: bookings.usaPackPromocional,
+      packSeleccionado: bookings.packSeleccionado,
+      horariosSeleccionados: bookings.horariosSeleccionados,
       createdAt: bookings.createdAt,
       updatedAt: bookings.updatedAt,
       studentId: students.id,
@@ -230,13 +249,28 @@ export async function getBookingDetail(db: NodePgDatabase<typeof schema>, id: st
   return {
     id: booking.id,
     status: booking.status,
+    bookingBatchId: booking.bookingBatchId,
+    estadoReserva: booking.estadoReserva,
+    estadoPago: booking.estadoPago,
     selectedDate: booking.selectedDate,
     startTime: timeForResponse(booking.startTime),
     endTime: timeForResponse(booking.endTime),
     totalTopics: booking.totalTopics,
     totalAmount: booking.totalAmount,
     paymentAlias: booking.paymentAlias,
+    mercadopagoPreferenceId: booking.mercadopagoPreferenceId,
+    mercadopagoPaymentId: booking.mercadopagoPaymentId,
+    googleCalendarEventId: booking.googleCalendarEventId,
+    montoSenia: booking.montoSenia,
+    paidAt: booking.paidAt,
+    expiresAt: booking.expiresAt,
     adminNotes: booking.adminNotes,
+    objetivos: booking.objetivos,
+    modalidad: booking.modalidad,
+    tipoClase: booking.tipoClase,
+    usaPackPromocional: booking.usaPackPromocional,
+    packSeleccionado: booking.packSeleccionado,
+    horariosSeleccionados: booking.horariosSeleccionados,
     createdAt: booking.createdAt,
     updatedAt: booking.updatedAt,
     student: {

@@ -7,6 +7,7 @@ type AdminTab =
   | "subjects"
   | "subject-highlights"
   | "topics"
+  | "booking-filter-options"
   | "booking-time-slots"
   | "content-blocks"
   | "schools"
@@ -87,6 +88,15 @@ interface BookingTimeSlot {
   isVisible: boolean;
 }
 
+interface BookingFilterOption {
+  id: string;
+  kind: "level" | "year" | "track";
+  label: string;
+  parentId: string | null;
+  displayOrder: number;
+  isVisible: boolean;
+}
+
 interface ContentBlock {
   id: string;
   key: string;
@@ -141,13 +151,28 @@ interface Guardian {
 interface Booking {
   id: string;
   status: "PENDING_PAYMENT" | "PAID" | "CONFIRMED" | "CANCELLED" | "COMPLETED";
+  bookingBatchId: string | null;
+  estadoReserva: string;
+  estadoPago: string;
   selectedDate: string;
   startTime: string;
   endTime: string;
   totalTopics: number;
   totalAmount: string;
   paymentAlias: string | null;
-  student: { firstName: string; lastName: string; dni: string };
+  mercadopagoPreferenceId: string | null;
+  mercadopagoPaymentId: string | null;
+  googleCalendarEventId: string | null;
+  montoSenia: string | null;
+  paidAt: string | null;
+  expiresAt: string | null;
+  adminNotes: string | null;
+  objetivos?: string[];
+  modalidad?: string;
+  tipoClase?: string;
+  usaPackPromocional?: boolean;
+  packSeleccionado?: string | null;
+  student: { id: string; firstName: string; lastName: string; dni: string };
 }
 
 interface Settings {
@@ -182,6 +207,7 @@ const tabs: { id: AdminTab; label: string }[] = [
   { id: "subjects", label: "Materias" },
   { id: "subject-highlights", label: "Destacados" },
   { id: "topics", label: "Temarios" },
+  { id: "booking-filter-options", label: "Filtros reserva" },
   { id: "booking-time-slots", label: "Horarios" },
   { id: "content-blocks", label: "Textos" },
   { id: "schools", label: "Colegios" },
@@ -303,6 +329,7 @@ export function AdminApp() {
         {tab === "subjects" ? <SubjectsAdmin /> : null}
         {tab === "subject-highlights" ? <SubjectHighlightsAdmin /> : null}
         {tab === "topics" ? <TopicsAdmin /> : null}
+        {tab === "booking-filter-options" ? <BookingFilterOptionsAdmin /> : null}
         {tab === "booking-time-slots" ? <BookingTimeSlotsAdmin /> : null}
         {tab === "content-blocks" ? <ContentBlocksAdmin /> : null}
         {tab === "schools" ? <SchoolsAdmin /> : null}
@@ -640,6 +667,96 @@ function TopicsAdmin() {
   );
 }
 
+function BookingFilterOptionsAdmin() {
+  const [items, setItems] = useState<BookingFilterOption[]>([]);
+  const [editing, setEditing] = useState<BookingFilterOption | null>(null);
+
+  async function load() {
+    setItems((await api<{ items: BookingFilterOption[] }>("/api/admin/booking-filter-options?limit=100")).items);
+  }
+  useEffect(() => { load().catch(() => undefined); }, []);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const payload = {
+      kind: String(form.get("kind") ?? "") as BookingFilterOption["kind"],
+      label: String(form.get("label") ?? "").trim(),
+      parentId: textValue(form, "parentId"),
+      displayOrder: Number(form.get("displayOrder") || 0),
+      isVisible: boolValue(form, "isVisible"),
+    };
+
+    await api(editing ? `/api/admin/booking-filter-options/${editing.id}` : "/api/admin/booking-filter-options", {
+      method: editing ? "PATCH" : "POST",
+      body: JSON.stringify(payload),
+    });
+    setEditing(null);
+    event.currentTarget.reset();
+    await load();
+  }
+
+  const parentOptions = items.filter((item) => item.kind === "level" || item.kind === "year");
+  const parentLabel = (parentId: string | null) => items.find((item) => item.id === parentId)?.label ?? "Sin padre";
+  const kindLabel = (kind: BookingFilterOption["kind"]) =>
+    kind === "level" ? "Nivel" : kind === "year" ? "Año" : "Tipo";
+
+  return (
+    <CrudShell title="Filtros de reserva">
+      <form className="admin-form" key={editing?.id ?? "new-booking-filter-option"} onSubmit={submit}>
+        <h3>{editing ? "Editar opción" : "Nueva opción"}</h3>
+        <label>
+          Grupo
+          <select name="kind" required defaultValue={editing?.kind || "level"}>
+            <option value="level">Nivel</option>
+            <option value="year">Año</option>
+            <option value="track">Tipo / especialización</option>
+          </select>
+        </label>
+        <label>Nombre<input name="label" required defaultValue={editing?.label || ""} /></label>
+        <label>
+          Depende de
+          <select name="parentId" defaultValue={editing?.parentId || ""}>
+            <option value="">Sin padre</option>
+            {parentOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {kindLabel(option.kind)} · {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>Orden<input name="displayOrder" type="number" min="0" defaultValue={editing?.displayOrder ?? 0} /></label>
+        <label className="inline-check"><input name="isVisible" type="checkbox" defaultChecked={editing?.isVisible ?? true} /> Visible</label>
+        <button className="primary-action" type="submit">Guardar</button>
+        {editing ? (
+          <button className="secondary-action" type="button" onClick={() => setEditing(null)}>
+            Cancelar
+          </button>
+        ) : null}
+      </form>
+      <div className="admin-list">
+        {items.map((item) => (
+          <article className="admin-row" key={item.id}>
+            <div>
+              <strong>{item.label}</strong>
+              <span>
+                {kindLabel(item.kind)} · {parentLabel(item.parentId)} · orden {item.displayOrder}
+                {item.isVisible ? "" : " · Oculto"}
+              </span>
+            </div>
+            <div className="row-actions">
+              <button type="button" onClick={() => setEditing(item)}>Editar</button>
+              <button type="button" onClick={() => api(`/api/admin/booking-filter-options/${item.id}`, { method: "DELETE" }).then(load)}>
+                Ocultar
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </CrudShell>
+  );
+}
+
 function SchoolsAdmin() {
   const [items, setItems] = useState<School[]>([]);
   const [editing, setEditing] = useState<School | null>(null);
@@ -856,6 +973,7 @@ function StudentsAdmin() {
   const [items, setItems] = useState<Student[]>([]);
   const [guardians, setGuardians] = useState<Guardian[]>([]);
   const [editing, setEditing] = useState<Student | null>(null);
+  const [trackingMessage, setTrackingMessage] = useState("");
 
   async function load() {
     const [studentList, guardianList] = await Promise.all([
@@ -891,6 +1009,86 @@ function StudentsAdmin() {
     await load();
   }
 
+  async function submitTracking(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const studentId = String(form.get("studentId") || "");
+    const subject = String(form.get("subject") || "").trim();
+    const progressPercent = String(form.get("progressPercent") || "").trim();
+    const seenTopic = String(form.get("seenTopic") || "").trim();
+    const exerciseTitle = String(form.get("exerciseTitle") || "").trim();
+    const teacherNote = String(form.get("teacherNote") || "").trim();
+    const currentWork = textValue(form, "currentWork");
+    const needsReinforcement = textValue(form, "needsReinforcement");
+    const generalStatus = textValue(form, "generalStatus");
+
+    if (!studentId || !subject) {
+      setTrackingMessage("Elegí alumno y materia para cargar seguimiento.");
+      return;
+    }
+
+    const requests: Array<Promise<unknown>> = [];
+
+    if (progressPercent) {
+      requests.push(api(`/api/students/${studentId}/progress`, {
+        method: "POST",
+        body: JSON.stringify({
+          subject,
+          progressPercent: Number(progressPercent),
+          status: textValue(form, "progressStatus"),
+          teacherNotes: textValue(form, "progressNotes"),
+        }),
+      }));
+    }
+
+    if (seenTopic) {
+      requests.push(api(`/api/students/${studentId}/seen-topics`, {
+        method: "POST",
+        body: JSON.stringify({ subject, topic: seenTopic }),
+      }));
+    }
+
+    if (exerciseTitle) {
+      requests.push(api(`/api/students/${studentId}/pending-exercises`, {
+        method: "POST",
+        body: JSON.stringify({
+          subject,
+          title: exerciseTitle,
+          description: textValue(form, "exerciseDescription"),
+          dueDate: null,
+          status: "pendiente",
+        }),
+      }));
+    }
+
+    if (teacherNote) {
+      requests.push(api(`/api/students/${studentId}/teacher-notes`, {
+        method: "POST",
+        body: JSON.stringify({
+          subject,
+          note: teacherNote,
+          visibleToFamily: boolValue(form, "visibleToFamily"),
+        }),
+      }));
+    }
+
+    if (currentWork || needsReinforcement || generalStatus) {
+      requests.push(api(`/api/students/${studentId}/family-summary`, {
+        method: "POST",
+        body: JSON.stringify({ currentWork, needsReinforcement, generalStatus }),
+      }));
+    }
+
+    if (!requests.length) {
+      setTrackingMessage("No hay datos nuevos para guardar.");
+      return;
+    }
+
+    await Promise.all(requests);
+    setTrackingMessage("Seguimiento guardado.");
+    event.currentTarget.reset();
+  }
+
   return (
     <CrudShell title="Alumnos">
       <form className="admin-form" key={editing?.id ?? "new-student"} onSubmit={submit}>
@@ -914,6 +1112,33 @@ function StudentsAdmin() {
         </label>
         <button className="primary-action" type="submit">Guardar</button>
       </form>
+      <form className="admin-form" onSubmit={submitTracking}>
+        <h3>Seguimiento rápido</h3>
+        <label>Alumno
+          <select name="studentId" required>
+            <option value="">Seleccionar</option>
+            {items.map((student) => (
+              <option key={student.id} value={student.id}>
+                {student.firstName} {student.lastName} · DNI {student.dni}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>Materia<input name="subject" required placeholder="Matemática" /></label>
+        <label>Progreso %<input name="progressPercent" type="number" min="0" max="100" /></label>
+        <label>Estado<input name="progressStatus" placeholder="Bien, reforzar práctica..." /></label>
+        <label className="full-field">Notas de progreso<textarea name="progressNotes" /></label>
+        <label>Tema visto<input name="seenTopic" placeholder="Ecuaciones lineales" /></label>
+        <label>Ejercicio pendiente<input name="exerciseTitle" placeholder="Práctica de ecuaciones" /></label>
+        <label className="full-field">Descripción del ejercicio<textarea name="exerciseDescription" /></label>
+        <label className="full-field">Observación docente<textarea name="teacherNote" /></label>
+        <label className="inline-check"><input name="visibleToFamily" type="checkbox" defaultChecked /> Visible para familia</label>
+        <label className="full-field">Qué estamos trabajando<textarea name="currentWork" /></label>
+        <label className="full-field">Qué falta reforzar<textarea name="needsReinforcement" /></label>
+        <label className="full-field">Cómo viene<textarea name="generalStatus" /></label>
+        <button className="primary-action" type="submit">Guardar seguimiento</button>
+      </form>
+      {trackingMessage ? <p className="ok-text">{trackingMessage}</p> : null}
       <AdminTable items={items} onEdit={setEditing} onHide={(id) => api(`/api/admin/students/${id}`, { method: "DELETE" }).then(load)} />
     </CrudShell>
   );
@@ -952,9 +1177,22 @@ function BookingsAdmin() {
             <div>
               <strong>{booking.student.firstName} {booking.student.lastName}</strong>
               <span>{booking.selectedDate} · {booking.startTime}-{booking.endTime} · {booking.totalAmount}</span>
-              <span>{booking.status}</span>
+              <span>{booking.status} · reserva: {booking.estadoReserva} · pago: {booking.estadoPago}</span>
+              {booking.bookingBatchId ? <span>Lote: {booking.bookingBatchId}</span> : null}
+              {booking.montoSenia ? <span>Seña: {booking.montoSenia}</span> : null}
+              {booking.mercadopagoPaymentId ? <span>Pago MP: {booking.mercadopagoPaymentId}</span> : null}
+              {booking.googleCalendarEventId ? <span>Calendar: {booking.googleCalendarEventId}</span> : null}
+              <span>
+                {[booking.modalidad, booking.tipoClase, booking.usaPackPromocional ? booking.packSeleccionado || "Pack" : null]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </span>
+              {booking.objetivos?.length ? <span>Objetivos: {booking.objetivos.join(", ")}</span> : null}
+              {booking.adminNotes ? <span>{booking.adminNotes}</span> : null}
             </div>
             <div className="row-actions">
+              <a href={`/alumno/${booking.student.id}`} target="_blank" rel="noreferrer">Panel</a>
+              <a href={`/familia/${booking.student.id}`} target="_blank" rel="noreferrer">Familia</a>
               {["PAID", "CONFIRMED", "CANCELLED", "COMPLETED"].map((nextStatus) => (
                 <button key={nextStatus} type="button" onClick={() => changeStatus(booking.id, nextStatus)}>{nextStatus}</button>
               ))}

@@ -1,5 +1,6 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { Router } from "express";
+import { bookingSubjectSlugs } from "../bookings/catalog.js";
 import { getDb } from "../db/client.js";
 import { subjects } from "../db/schema.js";
 
@@ -16,7 +17,7 @@ subjectsRouter.get("/", async (_req, res, next) => {
         displayOrder: subjects.displayOrder,
       })
       .from(subjects)
-      .where(eq(subjects.isVisible, true))
+      .where(and(eq(subjects.isVisible, true), inArray(subjects.slug, bookingSubjectSlugs)))
       .orderBy(asc(subjects.displayOrder), asc(subjects.name));
 
     return res.json({ items });
