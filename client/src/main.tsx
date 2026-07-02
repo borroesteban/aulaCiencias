@@ -5,9 +5,7 @@ import L from "leaflet";
 import { AdminApp } from "./admin";
 import { FamilySummary } from "./components/FamilySummary";
 import { FloatingWhatsappButton } from "./components/FloatingWhatsappButton";
-import { PaymentResultPage } from "./components/PaymentResultPage";
 import { StudentPanel } from "./components/StudentPanel";
-import { TestimonialsTicker } from "./components/TestimonialsTicker";
 import "leaflet/dist/leaflet.css";
 import "./styles.css";
 
@@ -97,7 +95,6 @@ interface PublicSettings {
   pricePerHour: string;
   topicsPerHour: number;
   maxStudentsPerSlot: number;
-  mercadoPagoAlias: string | null;
   primaryColor: string;
   secondaryColor: string;
   accentColor: string;
@@ -197,7 +194,6 @@ const emptySettings: PublicSettings = {
   pricePerHour: "0",
   topicsPerHour: 1,
   maxStudentsPerSlot: 1,
-  mercadoPagoAlias: null,
   primaryColor: "#000000",
   secondaryColor: "#000000",
   accentColor: "#000000",
@@ -1045,39 +1041,6 @@ function App() {
     );
   }
 
-  if (path === "/reserva/success" || path === "/reserva/pending" || path === "/reserva/failure") {
-    const kind = path.replace("/reserva/", "") as "success" | "pending" | "failure";
-
-    return (
-      <div>
-        <header className="site-header">
-          <div className="nav-float-layer" aria-hidden="true">
-            {navbarFloatItems.map((item, index) => (
-              <span className="nav-float-item" key={`${item}-${index}`}>
-                <NavbarFloatIcon name={item} />
-              </span>
-            ))}
-          </div>
-          <a className="brand" href="/">
-            {settings.siteTitle}
-          </a>
-          <nav aria-label="Secciones">
-            <a href="/">Inicio</a>
-            <a href="/#silvi">Reservar</a>
-          </nav>
-        </header>
-        <main>
-          <PaymentResultPage kind={kind} />
-        </main>
-        <FloatingWhatsappButton phoneNumber={settings.whatsappNumber} />
-        <footer className="site-footer">
-          <span>{settings.siteTitle}</span>
-          {settings.whatsappNumber ? <span>WhatsApp {settings.whatsappNumber}</span> : null}
-        </footer>
-      </div>
-    );
-  }
-
   if (path.startsWith("/materiales/")) {
     return (
       <div>
@@ -1250,8 +1213,6 @@ function App() {
           isAdmin={isAdmin}
           heading={content.downloadables}
         />
-
-        <TestimonialsTicker />
 
         <StudySection heading={content.schools} schools={schools} isAdmin={isAdmin} />
 
@@ -1698,7 +1659,7 @@ function GlossaryArticlePage({ slug }: { slug: string }) {
       .then((data) => {
         if (!isMounted) return;
         setArticle(data.article);
-        document.title = data.article.seoTitle || `${data.article.title} - aulaCiencias`;
+        document.title = data.article.seoTitle || `${data.article.title} - AulaCiencias`;
         setState("ready");
       })
       .catch(() => {
@@ -2130,10 +2091,15 @@ function StudySection({
         <section className="institution-map-column" aria-label="Localización en mapa">
           <h3>Localización en mapa</h3>
           {selectedInstitution ? (
-            <>
-              <LeafletInstitutionMap institution={selectedInstitution} />
-              <article className="info-card institution-detail-card">
-                <div className="institution-detail-main">
+            <LeafletInstitutionMap institution={selectedInstitution} />
+          ) : (
+            <p className="muted">Seleccioná una institución para ver su localización.</p>
+          )}
+        </section>
+
+        {selectedInstitution ? (
+          <article className="info-card institution-detail-card institution-full-detail">
+            <div className="institution-detail-main">
               <div>
                 <span className="tag">{selectedInstitution.type}</span>
                 <h3>{selectedInstitution.name}</h3>
@@ -2159,43 +2125,39 @@ function StudySection({
                 <dt>Horarios de atención</dt>
                 <dd>{selectedInstitution.openingHours || "No informados"}</dd>
               </dl>
+            </div>
+
+            <section>
+              <h4>Ofertas educativas</h4>
+              <div className="study-topic-list">
+                {selectedInstitution.educationalOffers.map((offer) => (
+                  <span key={offer.id}>{offer.name}</span>
+                ))}
+              </div>
+              {selectedInstitution.educationalOffers.map((offer) => (
+                <div className="offer-detail" key={offer.id}>
+                  <strong>{offer.name}</strong>
+                  <small>{[offer.type, offer.titleGranted, offer.duration, offer.modality].filter(Boolean).join(" · ")}</small>
+                  {offer.description ? <p>{offer.description}</p> : null}
+                  {offer.website ? <a className="text-action" href={offer.website} target="_blank" rel="noreferrer">Ver oferta</a> : null}
                 </div>
+              ))}
+            </section>
 
-                <section>
-                  <h4>Ofertas educativas</h4>
-                  <div className="study-topic-list">
-                    {selectedInstitution.educationalOffers.map((offer) => (
-                      <span key={offer.id}>{offer.name}</span>
-                    ))}
-                  </div>
-                  {selectedInstitution.educationalOffers.map((offer) => (
-                    <div className="offer-detail" key={offer.id}>
-                      <strong>{offer.name}</strong>
-                      <small>{[offer.type, offer.titleGranted, offer.duration, offer.modality].filter(Boolean).join(" · ")}</small>
-                      {offer.description ? <p>{offer.description}</p> : null}
-                      {offer.website ? <a className="text-action" href={offer.website} target="_blank" rel="noreferrer">Ver oferta</a> : null}
-                    </div>
-                  ))}
-                </section>
-
-                {selectedInstitution.sourceName ? (
-                  <p className="source-note">
-                    Fuente: {selectedInstitution.sourceName}
-                    {selectedInstitution.lastVerifiedAt ? ` · verificado ${selectedInstitution.lastVerifiedAt}` : ""}
-                    {selectedInstitution.sourceUrl ? (
-                      <>
-                        {" · "}
-                        <a href={selectedInstitution.sourceUrl} target="_blank" rel="noreferrer">Ver fuente</a>
-                      </>
-                    ) : null}
-                  </p>
+            {selectedInstitution.sourceName ? (
+              <p className="source-note">
+                Fuente: {selectedInstitution.sourceName}
+                {selectedInstitution.lastVerifiedAt ? ` · verificado ${selectedInstitution.lastVerifiedAt}` : ""}
+                {selectedInstitution.sourceUrl ? (
+                  <>
+                    {" · "}
+                    <a href={selectedInstitution.sourceUrl} target="_blank" rel="noreferrer">Ver fuente</a>
+                  </>
                 ) : null}
-              </article>
-            </>
-          ) : (
-            <p className="muted">Seleccioná una institución para ver su localización.</p>
-          )}
-        </section>
+              </p>
+            ) : null}
+          </article>
+        ) : null}
       </div>
       <SectionState
         state={combinedState}
@@ -2219,6 +2181,19 @@ function AuthModal({
   const [mode, setMode] = useState<"login" | "register">("login");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+    };
+  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -2273,8 +2248,13 @@ function AuthModal({
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
       <section className="login-card auth-modal">
         <div className="modal-header">
-          <a className="brand" href="#inicio">aulaCiencias</a>
-          <button type="button" className="icon-close" onClick={onClose}>x</button>
+          <a className="brand" href="#inicio">AulaCiencias</a>
+          <button type="button" className="btn-close" onClick={onClose} aria-label="Cerrar">
+             <svg viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="20" y1="4" x2="4" y2="20"></line>
+              <line x1="4" y1="4" x2="20" y2="20"></line>
+             </svg>
+          </button>
         </div>
         <p className="eyebrow">{mode === "login" ? "Acceso" : "Crear usuario"}</p>
         <h1 id="auth-modal-title">{mode === "login" ? "Ingresar" : "Registrarse"}</h1>
@@ -2308,7 +2288,7 @@ function AuthModal({
         {message ? <p className="error-text">{message}</p> : null}
         {!currentUser ? (
           <button className="text-action button-link" type="button" onClick={() => setMode(mode === "login" ? "register" : "login")}>
-            {mode === "login" ? "Crear usuario comun" : "Ya tengo usuario"}
+            {mode === "login" ? "Crear usuario común" : "Ya tengo usuario"}
           </button>
         ) : null}
         {currentUser && currentUser.role !== "USER" ? (
@@ -2648,7 +2628,7 @@ function DownloadableDetailPage({ id }: { id: string }) {
       .then((data) => {
         if (!isMounted) return;
         setDetail(data);
-        document.title = `${data.item.title} - Material aulaCiencias`;
+        document.title = `${data.item.title} - Material AulaCiencias`;
         setState("ready");
       })
       .catch(() => {
@@ -2984,11 +2964,39 @@ function BookingSection({
     capacity: number;
     endTime?: string;
     reason?: string;
+    expiresAt?: string | null;
   }>>({});
   const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
   const [availabilityState, setAvailabilityState] = useState<LoadState>("idle");
   const [submitState, setSubmitState] = useState<LoadState>("idle");
   const [bookingMessage, setBookingMessage] = useState("");
+  const [countdownNow, setCountdownNow] = useState(Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setCountdownNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    setAvailabilities((current) => {
+      let changed = false;
+      const next = Object.fromEntries(Object.entries(current).map(([date, availability]) => {
+        const expired = availability.reason === "RESERVATION_PENDING"
+          && availability.expiresAt
+          && new Date(availability.expiresAt).getTime() <= countdownNow;
+        if (!expired) return [date, availability];
+        changed = true;
+        return [date, { ...availability, available: true, booked: Math.max(0, availability.booked - 1), reason: undefined, expiresAt: null }];
+      }));
+      return changed ? next : current;
+    });
+  }, [countdownNow]);
+
+  function pendingTimeLeft(expiresAt?: string | null) {
+    if (!expiresAt) return "";
+    const seconds = Math.max(0, Math.ceil((new Date(expiresAt).getTime() - countdownNow) / 1000));
+    return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  }
 
   const selectedTopics = topics.filter((topic) => selectedTopicIds.includes(topic.id));
   const bookingLevels = useMemo(
@@ -3115,7 +3123,13 @@ function BookingSection({
 
   useEffect(() => {
     const visibleTopicIds = new Set(filteredTopics.map((topic) => topic.id));
-    setSelectedTopicIds((current) => current.filter((id) => visibleTopicIds.has(id)));
+    setSelectedTopicIds((current) => {
+      const next = current.filter((id) => visibleTopicIds.has(id));
+
+      return next.length === current.length && next.every((id, index) => id === current[index])
+        ? current
+        : next;
+    });
   }, [filteredTopics]);
 
   useEffect(() => {
@@ -3240,6 +3254,7 @@ function BookingSection({
           capacity: number;
           endTime: string;
           reason?: string;
+          expiresAt?: string | null;
         }>(`/api/availability?${params.toString()}`).then((data) => [date, data] as const);
       }),
     )
@@ -3345,20 +3360,33 @@ function BookingSection({
         throw new Error(data?.error || "BOOKING_ERROR");
       }
 
-      const checkoutUrl = data.payment?.initPoint || data.payment?.sandboxInitPoint || "";
+      const objectiveLabels = selectedObjectiveIds
+        .map((id) => bookingObjectiveOptions.find((option) => option.id === id)?.label)
+        .filter(Boolean)
+        .join(", ");
+      const messageLines = [
+        "Hola Silvi, acabo de solicitar una clase. La reserva queda pendiente durante 15 minutos.",
+        "",
+        `Alumno/a: ${student.firstName} ${student.lastName}`,
+        `Materia: ${activeSubjectName || selectedTopics.map((topic) => topic.subject).filter(Boolean).join(", ") || "A confirmar"}`,
+        `Nivel: ${selectedLevel?.label || "A confirmar"}`,
+        `Año: ${selectedYear?.label || "A confirmar"}`,
+        selectedTrack?.label ? `Tipo/orientación: ${selectedTrack.label}` : "",
+        `Temas: ${[...selectedTopics.map(bookingTopicTitle), ...customTopics.map((topic) => topic.title)].join(", ")}`,
+        specificTopicNotes.trim() ? `Detalle para reforzar: ${specificTopicNotes.trim()}` : "",
+        `Objetivo: ${objectiveLabels}`,
+        `Modalidad: ${bookingModalityOptions.find((option) => option.id === modalidad)?.label || modalidad}`,
+        `Tipo de clase: ${bookingClassTypeOptions.find((option) => option.id === tipoClase)?.label || tipoClase}`,
+        `Fechas: ${selectedDates.join(", ")}`,
+        `Horario: ${startTime} a ${endTime}`,
+        `Pack: ${showPackPromotions ? selectedPack?.nombre || selectedPackId : "No"}`,
+        "",
+        "Información adicional (podés escribir aquí): ",
+      ].filter((line) => line !== "");
+      const whatsappNumber = String(data.reservation?.whatsappNumber || settings.whatsappNumber || "").replace(/\D/g, "");
+      const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(messageLines.join("\n"))}`;
 
-      if (checkoutUrl) {
-        setBookingMessage("Reserva creada. Te llevamos a Mercado Pago para abonar la seña y confirmar el horario.");
-        window.setTimeout(() => {
-          window.location.href = checkoutUrl;
-        }, 700);
-      } else {
-        setBookingMessage(
-          `${data.bookings.length} reserva(s) creadas en estado pendiente de pago. Transferí al alias ${
-            data.payment?.alias || "a confirmar"
-          } y envía WhatsApp al ${data.payment?.whatsappNumber || settings.whatsappNumber}.`,
-        );
-      }
+      setBookingMessage("Reserva pendiente. El horario quedó bloqueado durante 15 minutos mientras Silvi confirma la transferencia.");
       setSubmitState("ready");
       setStudent(initialStudentForm);
       setSelectedTopicIds([]);
@@ -3373,6 +3401,7 @@ function BookingSection({
       setSpecificTopicNotes("");
       setAvailabilities({});
       setIsStudentModalOpen(false);
+      window.location.href = whatsappUrl;
     } catch (error) {
       setBookingMessage(
         error instanceof Error && error.message === "SLOT_FULL"
@@ -3753,7 +3782,7 @@ function BookingSection({
                 >
                   <span>{option.weekday}</span>
                   <strong>{option.day}</strong>
-                  <small>{isUnavailable ? "Ocupado" : option.month}</small>
+                  <small>{isUnavailable ? availability?.reason === "RESERVATION_PENDING" ? "Reserva pendiente" : "Ocupado" : option.month}</small>
                 </button>
               );
             })}
@@ -3773,7 +3802,9 @@ function BookingSection({
                         ? `disponible (${availability.booked}/${availability.capacity})`
                         : availability?.reason === "PAST_SLOT"
                           ? "horario pasado"
-                          : "sin cupo"}
+                          : availability?.reason === "RESERVATION_PENDING"
+                            ? `reserva pendiente · ${pendingTimeLeft(availability.expiresAt)}`
+                            : "sin cupo"}
                     </span>
                   );
                 })}
@@ -3811,8 +3842,6 @@ function BookingSection({
               <dd>{startTime ? `${startTime} a ${selectedAvailability[0]?.endTime || endTime}` : "Sin seleccionar"}</dd>
               <dt>Monto estimado</dt>
               <dd>{formatCurrency(estimatedAmount * Math.max(1, selectedDates.length))}</dd>
-              <dt>Alias de pago</dt>
-              <dd>{settings.mercadoPagoAlias || "A confirmar"}</dd>
               <dt>WhatsApp</dt>
               <dd>{settings.whatsappNumber || "A confirmar"}</dd>
             </dl>
@@ -3844,8 +3873,8 @@ function BookingSection({
             </section>
             <p className="muted">
               {currentUser
-                ? `Estás logueado como ${currentUser.email}. La reserva queda pendiente de pago.`
-                : "La reserva queda pendiente de pago. Envía WhatsApp indicando quién transfiere y para qué alumno."}
+                ? `Estás logueado como ${currentUser.email}. El horario se bloqueará 15 minutos mientras Silvi confirma la transferencia.`
+                : "El horario se bloqueará 15 minutos. Se abrirá WhatsApp con todos los datos de la solicitud para que puedas agregar lo que quieras."}
             </p>
             <button
               className="primary-action button-action"
@@ -3926,7 +3955,7 @@ function BookingSection({
               alumno ya está registrado.
             </p>
             <button className="primary-action button-action" type="submit" disabled={submitState === "loading"}>
-              {submitState === "loading" ? "Creando..." : "Confirmar reserva"}
+              {submitState === "loading" ? "Creando..." : "Solicitar clase por WhatsApp"}
             </button>
             {bookingMessage ? (
               <p className={submitState === "error" ? "error-text" : "ok-text"}>{bookingMessage}</p>

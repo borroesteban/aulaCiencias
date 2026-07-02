@@ -40,6 +40,10 @@ La app queda en `http://localhost:8080` y PostgreSQL queda expuesto en `localhos
 El contenedor de la app ejecuta migraciones y seed antes de iniciar.
 Docker local usa `AUTH_COOKIE_SECURE=false` para que el login funcione sobre HTTP.
 
+En Windows, tambien se puede ejecutar `iniciar-red-local.bat`. El archivo construye
+la version actual, inicia Docker y muestra las direcciones que pueden abrir otros
+dispositivos conectados a la misma red local.
+
 Credenciales admin locales creadas por el seed de Docker:
 
 - Email: `admin@aulaciencias.local`

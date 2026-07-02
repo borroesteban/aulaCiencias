@@ -1451,7 +1451,7 @@ dd {
   display: grid;
   grid-template-columns: minmax(190px, 0.38fr) minmax(210px, 0.46fr) minmax(0, 1.25fr);
   gap: 18px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .institution-filter-panel,
@@ -1462,11 +1462,16 @@ dd {
   background: white;
   box-shadow: 0 12px 36px rgba(0, 127, 145, 0.08);
   padding: 16px;
+  height: 410px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .institution-filter-panel {
   display: grid;
   gap: 16px;
+  align-content: start;
+  overflow-y: auto;
 }
 
 .institution-filter-panel h3,
@@ -1487,12 +1492,13 @@ dd {
 
 .institution-map-column {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 14px;
 }
 
 .institution-result-list {
   display: grid;
-  max-height: 680px;
+  max-height: 340px;
   gap: 10px;
   overflow: auto;
   padding-right: 6px;
@@ -1513,6 +1519,14 @@ dd {
 .institution-detail-card {
   display: grid;
   gap: 18px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.institution-full-detail {
+  grid-column: 1 / -1;
+  overflow: visible;
+  padding: 20px;
 }
 
 .institution-detail-main {
@@ -1785,7 +1799,7 @@ dd {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: 2000;
   display: grid;
   place-items: center;
   background: rgba(5, 47, 70, 0.56);
@@ -1814,6 +1828,35 @@ dd {
 
 .modal-header h3 {
   margin-bottom: 0;
+}
+
+.btn-close {
+  /* Crea el círculo exacto de la imagen */
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid #e0e0e0;
+  background-color: transparent;
+  
+  /* Centrado geométrico impecable */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  
+  /* Color de la cruz (gris oscuro/negro) */
+  color: #222222;
+  cursor: pointer;
+  padding: 0;
+  
+  /* Suaviza la transición de colores */
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+/* Efecto Hover solicitado */
+.btn-close:hover {
+  background-color: #ff4d4f; /* Fondo rojo */
+  border-color: #ff4d4f;     /* Borde rojo */
+  color: #ffffff;            /* Icono SVG pasa a blanco */
 }
 
 .icon-close {
@@ -2398,6 +2441,17 @@ dd {
   .tracking-grid,
   .family-summary-layout {
     grid-template-columns: 1fr;
+  }
+
+  .institution-filter-panel,
+  .institution-results-panel,
+  .institution-map-column {
+    height: auto;
+    overflow: visible;
+  }
+
+  .institution-map-column {
+    grid-template-rows: auto;
   }
 
   .institution-type-menu {

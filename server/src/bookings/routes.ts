@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull } from "drizzle-orm";
 import { Router } from "express";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -7,11 +7,6 @@ import { bookingTopics, bookings, subjects, topics } from "../db/schema.js";
 import { attachOptionalUser } from "../auth/middleware.js";
 import { nullableTextSchema, shortNullableTextSchema } from "../http/schemas.js";
 import { validateBody, validateQuery } from "../http/validation.js";
-import {
-  calculateDepositAmount,
-  createPaymentHoldExpiration,
-  createPaymentPreferenceForBatch,
-} from "../payments/service.js";
 import {
   canonicalBookingSubjectName,
   isBookingAvailableLevel,
@@ -22,6 +17,7 @@ import {
   calculateBookingHours,
   calculateTotalAmount,
   countActiveBookingsForSlot,
+  createReservationHoldExpiration,
   createStudentForBooking,
   getBookingSettings,
   getVisibleTopicsByIds,
@@ -290,9 +286,26 @@ bookingsRouter.get("/availability", validateQuery(availabilityQuerySchema), asyn
     }
 
     const booked = await countActiveBookingsForSlot(db, date, startTime, calculatedEndTime);
+    const [pendingReservation] = await db
+      .select({ expiresAt: bookings.expiresAt })
+      .from(bookings)
+      .where(
+        and(
+          eq(bookings.selectedDate, date),
+          eq(bookings.startTime, startTime),
+          eq(bookings.endTime, calculatedEndTime),
+          eq(bookings.estadoReserva, "reserva_pendiente"),
+          gt(bookings.expiresAt, new Date()),
+        ),
+      )
+      .limit(1);
 
     return res.json({
       available: booked < settings.maxStudentsPerSlot,
+      reason: booked >= settings.maxStudentsPerSlot
+        ? pendingReservation ? "RESERVATION_PENDING" : "SLOT_FULL"
+        : undefined,
+      expiresAt: pendingReservation?.expiresAt ?? null,
       booked,
       capacity: settings.maxStudentsPerSlot,
       date,
@@ -352,16 +365,14 @@ bookingsRouter.post("/bookings", attachOptionalUser, validateBody(createBookingS
           studentId: student.id,
           status: "PENDING_PAYMENT",
           bookingBatchId,
-          estadoReserva: "pendiente_pago",
+          estadoReserva: "reserva_pendiente",
           estadoPago: "pendiente",
           selectedDate: body.selectedDate,
           startTime: body.startTime,
           endTime,
           totalTopics,
           totalAmount,
-          paymentAlias: settings.mercadoPagoAlias,
-          montoSenia: calculateDepositAmount(totalAmount),
-          expiresAt: createPaymentHoldExpiration(),
+          expiresAt: createReservationHoldExpiration(),
           adminNotes: body.adminNotes ?? null,
           objetivos: body.objetivos,
           modalidad: body.modalidad,
@@ -382,21 +393,9 @@ bookingsRouter.post("/bookings", attachOptionalUser, validateBody(createBookingS
       return {
         booking,
         selectedTopics,
-        payment: {
-          alias: settings.mercadoPagoAlias,
-          whatsappNumber: settings.whatsappNumber,
-          instructions:
-            "Transferi al alias indicado y envia WhatsApp al aula indicando quien envia el dinero y para que alumno.",
-        },
+        whatsappNumber: settings.whatsappNumber,
       };
     });
-
-    let preference = null;
-    try {
-      preference = await createPaymentPreferenceForBatch(db, bookingBatchId);
-    } catch (error) {
-      console.error("No se pudo crear la preferencia de Mercado Pago", { bookingBatchId, error });
-    }
 
     return res.status(201).json({
       booking: {
@@ -421,16 +420,11 @@ bookingsRouter.post("/bookings", attachOptionalUser, validateBody(createBookingS
         horariosSeleccionados: createdBooking.booking.horariosSeleccionados,
         topics: createdBooking.selectedTopics,
       },
-      payment: {
-        ...createdBooking.payment,
-        bookingBatchId,
-        provider: "mercadopago",
-        preferenceId: preference?.preferenceId ?? null,
-        initPoint: preference?.initPoint ?? null,
-        sandboxInitPoint: preference?.sandboxInitPoint ?? null,
-        amount: preference?.amount ?? createdBooking.booking.montoSenia,
-        automatic: Boolean(preference?.initPoint),
-        reason: preference?.reason ?? null,
+      reservation: {
+        state: "reserva_pendiente",
+        expiresAt: createdBooking.booking.expiresAt,
+        holdMinutes: 15,
+        whatsappNumber: createdBooking.whatsappNumber,
       },
     });
   } catch (error) {
@@ -505,16 +499,14 @@ bookingsRouter.post("/bookings/bulk", attachOptionalUser, validateBody(createBul
             studentId: student.id,
             status: "PENDING_PAYMENT",
             bookingBatchId,
-            estadoReserva: "pendiente_pago",
+            estadoReserva: "reserva_pendiente",
             estadoPago: "pendiente",
             selectedDate,
             startTime: body.startTime,
             endTime,
             totalTopics,
             totalAmount,
-            paymentAlias: settings.mercadoPagoAlias,
-            montoSenia: calculateDepositAmount(totalAmount),
-            expiresAt: createPaymentHoldExpiration(),
+            expiresAt: createReservationHoldExpiration(),
             adminNotes: body.adminNotes ?? null,
             objetivos: body.objetivos,
             modalidad: body.modalidad,
@@ -538,21 +530,9 @@ bookingsRouter.post("/bookings/bulk", attachOptionalUser, validateBody(createBul
       return {
         bookings: bookingsCreated,
         selectedTopics,
-        payment: {
-          alias: settings.mercadoPagoAlias,
-          whatsappNumber: settings.whatsappNumber,
-          instructions:
-            "Transferi al alias indicado y envia WhatsApp al aula indicando quien envia el dinero y para que alumno.",
-        },
+        whatsappNumber: settings.whatsappNumber,
       };
     });
-
-    let preference = null;
-    try {
-      preference = await createPaymentPreferenceForBatch(db, bookingBatchId);
-    } catch (error) {
-      console.error("No se pudo crear la preferencia de Mercado Pago", { bookingBatchId, error });
-    }
 
     return res.status(201).json({
       bookings: created.bookings.map((booking) => ({
@@ -577,16 +557,11 @@ bookingsRouter.post("/bookings/bulk", attachOptionalUser, validateBody(createBul
         horariosSeleccionados: booking.horariosSeleccionados,
         topics: created.selectedTopics,
       })),
-      payment: {
-        ...created.payment,
-        bookingBatchId,
-        provider: "mercadopago",
-        preferenceId: preference?.preferenceId ?? null,
-        initPoint: preference?.initPoint ?? null,
-        sandboxInitPoint: preference?.sandboxInitPoint ?? null,
-        amount: preference?.amount ?? created.bookings[0]?.montoSenia ?? null,
-        automatic: Boolean(preference?.initPoint),
-        reason: preference?.reason ?? null,
+      reservation: {
+        state: "reserva_pendiente",
+        expiresAt: created.bookings[0]?.expiresAt ?? null,
+        holdMinutes: 15,
+        whatsappNumber: created.whatsappNumber,
       },
     });
   } catch (error) {

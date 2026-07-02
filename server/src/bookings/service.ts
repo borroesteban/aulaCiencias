@@ -4,12 +4,16 @@ import type * as schema from "../db/schema.js";
 import { appSettings, bookingTopics, bookings, guardians, studentGuardians, students, topics } from "../db/schema.js";
 
 export const activeBookingStatuses = ["PAID", "CONFIRMED"] as const;
+const reservationHoldMinutes = 15;
+
+export function createReservationHoldExpiration() {
+  return new Date(Date.now() + reservationHoldMinutes * 60 * 1000);
+}
 
 export interface BookingSettings {
   pricePerHour: number;
   topicsPerHour: number;
   maxStudentsPerSlot: number;
-  mercadoPagoAlias: string | null;
   whatsappNumber: string;
 }
 
@@ -51,7 +55,6 @@ export async function getBookingSettings(db: NodePgDatabase<typeof schema>): Pro
     pricePerHour: Number(settings?.pricePerHour ?? 0),
     topicsPerHour: settings?.topicsPerHour ?? 1,
     maxStudentsPerSlot: settings?.maxStudentsPerSlot ?? 1,
-    mercadoPagoAlias: settings?.mercadoPagoAlias ?? null,
     whatsappNumber: settings?.whatsappNumber ?? "",
   };
 }
@@ -73,7 +76,7 @@ export async function countActiveBookingsForSlot(
         or(
           inArray(bookings.status, [...activeBookingStatuses]),
           eq(bookings.estadoReserva, "confirmada"),
-          and(eq(bookings.estadoReserva, "pendiente_pago"), gt(bookings.expiresAt, new Date())),
+          and(eq(bookings.estadoReserva, "reserva_pendiente"), gt(bookings.expiresAt, new Date())),
         ),
       ),
     );
@@ -203,8 +206,6 @@ export async function getBookingDetail(db: NodePgDatabase<typeof schema>, id: st
       totalTopics: bookings.totalTopics,
       totalAmount: bookings.totalAmount,
       paymentAlias: bookings.paymentAlias,
-      mercadopagoPreferenceId: bookings.mercadopagoPreferenceId,
-      mercadopagoPaymentId: bookings.mercadopagoPaymentId,
       googleCalendarEventId: bookings.googleCalendarEventId,
       montoSenia: bookings.montoSenia,
       paidAt: bookings.paidAt,
@@ -258,8 +259,6 @@ export async function getBookingDetail(db: NodePgDatabase<typeof schema>, id: st
     totalTopics: booking.totalTopics,
     totalAmount: booking.totalAmount,
     paymentAlias: booking.paymentAlias,
-    mercadopagoPreferenceId: booking.mercadopagoPreferenceId,
-    mercadopagoPaymentId: booking.mercadopagoPaymentId,
     googleCalendarEventId: booking.googleCalendarEventId,
     montoSenia: booking.montoSenia,
     paidAt: booking.paidAt,

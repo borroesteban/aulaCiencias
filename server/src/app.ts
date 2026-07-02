@@ -14,7 +14,6 @@ import { downloadablesRouter } from "./downloadables/routes.js";
 import { errorHandler } from "./http/error-handler.js";
 import { glossaryRouter } from "./glossary/routes.js";
 import { mapRouter } from "./map/routes.js";
-import { paymentsRouter } from "./payments/routes.js";
 import { schoolsRouter } from "./schools/routes.js";
 import { settingsRouter } from "./settings/routes.js";
 import { studentsRouter } from "./students/routes.js";
@@ -61,7 +60,6 @@ export function createApp() {
   app.use("/api/schools", schoolsRouter);
   app.use("/api/settings", settingsRouter);
   app.use("/api/students", studentsRouter);
-  app.use("/api/payments", paymentsRouter);
   app.use("/api/calendar", calendarRouter);
   app.use("/api/glossary", glossaryRouter);
   app.use("/api/study", studyRouter);

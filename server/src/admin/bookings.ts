@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gt, inArray } from "drizzle-orm";
 import { Router } from "express";
 import { z } from "zod";
 import { getDb } from "../db/client.js";
@@ -49,8 +49,6 @@ adminBookingsRouter.get("/", validateQuery(bookingsQuerySchema), async (req, res
         totalTopics: bookings.totalTopics,
         totalAmount: bookings.totalAmount,
         paymentAlias: bookings.paymentAlias,
-        mercadopagoPreferenceId: bookings.mercadopagoPreferenceId,
-        mercadopagoPaymentId: bookings.mercadopagoPaymentId,
         googleCalendarEventId: bookings.googleCalendarEventId,
         montoSenia: bookings.montoSenia,
         paidAt: bookings.paidAt,
@@ -89,8 +87,6 @@ adminBookingsRouter.get("/", validateQuery(bookingsQuerySchema), async (req, res
         totalTopics: item.totalTopics,
         totalAmount: item.totalAmount,
         paymentAlias: item.paymentAlias,
-        mercadopagoPreferenceId: item.mercadopagoPreferenceId,
-        mercadopagoPaymentId: item.mercadopagoPaymentId,
         googleCalendarEventId: item.googleCalendarEventId,
         montoSenia: item.montoSenia,
         paidAt: item.paidAt,
@@ -139,7 +135,7 @@ adminBookingsRouter.patch(
     try {
       const { status, adminNotes } = req.body as z.infer<typeof updateStatusSchema>;
       const estadoReserva = status === "CANCELLED" ? "cancelada" : "confirmada";
-      const estadoPago = status === "CANCELLED" ? "rechazado" : "aprobado";
+      const estadoPago = status === "CANCELLED" ? "transferencia_no_aprobada" : "transferencia_aprobada";
       const [item] = await getDb()
         .update(bookings)
         .set({
@@ -150,11 +146,17 @@ adminBookingsRouter.patch(
           adminNotes,
           updatedAt: new Date(),
         })
-        .where(and(eq(bookings.id, req.params.id), inArray(bookings.status, [...bookingStatuses])))
+        .where(and(
+          eq(bookings.id, req.params.id),
+          inArray(bookings.status, [...bookingStatuses]),
+          ...(status === "CONFIRMED" ? [gt(bookings.expiresAt, new Date())] : []),
+        ))
         .returning();
 
       if (!item) {
-        return res.status(404).json({ error: "NOT_FOUND" });
+        return res.status(status === "CONFIRMED" ? 409 : 404).json({
+          error: status === "CONFIRMED" ? "RESERVATION_EXPIRED" : "NOT_FOUND",
+        });
       }
 
       return res.json({

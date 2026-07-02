@@ -62,8 +62,12 @@ const normalizeWords = (text: string) =>
 
 const usedPhrases = new Set<string>();
 const comments: string[] = [];
+const targetCommentCount = 80;
+const maxCandidateAttempts = 5000;
 
-for (let seed = 0; comments.length < 200; seed += 1) {
+// La combinacion determinista puede quedarse sin frases que cumplan la regla de
+// unicidad. El limite evita bloquear el hilo principal antes de montar React.
+for (let seed = 0; seed < maxCandidateAttempts && comments.length < targetCommentCount; seed += 1) {
   const subject = subjects[seed % subjects.length];
   const verb = verbs[(seed * 7 + Math.floor(seed / subjects.length)) % verbs.length];
   const focus = focuses[(seed * 11 + Math.floor(seed / verbs.length)) % focuses.length];

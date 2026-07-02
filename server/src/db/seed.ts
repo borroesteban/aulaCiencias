@@ -260,7 +260,7 @@ const initialDownloadables = [
   },
   {
     title: "Preparación para previas",
-    description: "Flyer general de aulaCiencias para apoyo en Matemática, Físico-Química, Biología y Ciencias de la Tierra.",
+    description: "Flyer general de AulaCiencias para apoyo en Matemática, Físico-Química, Biología y Ciencias de la Tierra.",
     imageUrl: "/materiales/previa-aula-ciencias.jpeg",
     categorySlug: "general",
     isFeatured: true,
@@ -987,7 +987,7 @@ const gualeguaychuSchools = [
     address: "Gualeguaychu, Entre Rios",
     phone: null,
     email: null,
-    generalInfo: "Escuela tecnica estatal de Gualeguaychu.",
+    generalInfo: "Escuela tecnica estatal de Gualeguaychú.",
   },
 ];
 
@@ -1014,7 +1014,6 @@ async function seed() {
     pricePerHour: "0",
     topicsPerHour: 1,
     maxStudentsPerSlot: 1,
-    mercadoPagoAlias: null,
     primaryColor: "#0f766e",
     secondaryColor: "#1e293b",
     accentColor: "#f59e0b",
@@ -1040,7 +1039,7 @@ async function seed() {
     subjectWindowSizeUnit: "px",
     subjectWindowItems: null,
     whatsappNumber: null,
-    siteTitle: "aulaCiencias",
+    siteTitle: "AulaCiencias",
     heroEyebrow: "Gualeguaychú",
     heroTitle: "Clases, recursos y reservas claras para aprender ciencias.",
     heroSubtitle:

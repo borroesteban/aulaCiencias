@@ -13,7 +13,6 @@ settingsRouter.get("/public", async (_req, res, next) => {
         pricePerHour: settings?.pricePerHour ?? "0",
         topicsPerHour: settings?.topicsPerHour ?? 1,
         maxStudentsPerSlot: settings?.maxStudentsPerSlot ?? 1,
-        mercadoPagoAlias: settings?.mercadoPagoAlias ?? null,
         primaryColor: settings?.primaryColor ?? "#000000",
         secondaryColor: settings?.secondaryColor ?? "#000000",
         accentColor: settings?.accentColor ?? "#000000",

@@ -10,7 +10,6 @@ const updateSettingsSchema = z.object({
   pricePerHour: numericStringSchema,
   topicsPerHour: z.number().int().positive().max(50),
   maxStudentsPerSlot: z.number().int().positive().max(50),
-  mercadoPagoAlias: shortNullableTextSchema,
   primaryColor: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/),
   secondaryColor: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/),
   accentColor: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/),

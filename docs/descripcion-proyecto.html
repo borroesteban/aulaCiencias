@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>Descripcion del proyecto aulaCiencias</title>
+    <style>
+      @page {
+        margin: 2cm;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        color: #1f2933;
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 11.5pt;
+        line-height: 1.55;
+        margin: 0;
+      }
+
+      h1 {
+        color: #123b5d;
+        font-size: 26pt;
+        letter-spacing: 0;
+        margin: 0 0 0.2cm;
+      }
+
+      h2 {
+        border-bottom: 1px solid #d8e2ea;
+        color: #256477;
+        font-size: 15pt;
+        margin: 0.8cm 0 0.25cm;
+        padding-bottom: 0.1cm;
+      }
+
+      p {
+        margin: 0 0 0.35cm;
+      }
+
+      ul {
+        margin: 0.15cm 0 0.45cm 0.55cm;
+        padding: 0;
+      }
+
+      li {
+        margin: 0 0 0.15cm;
+      }
+
+      .subtitle {
+        color: #52616f;
+        font-size: 12.5pt;
+        margin-bottom: 0.65cm;
+      }
+
+      .summary-box {
+        background: #eef7f8;
+        border-left: 5px solid #2d8da0;
+        margin: 0.55cm 0;
+        padding: 0.45cm 0.55cm;
+      }
+
+      .tech {
+        color: #334e68;
+        font-weight: 700;
+      }
+
+      .footer {
+        border-top: 1px solid #d8e2ea;
+        color: #66788a;
+        font-size: 9.5pt;
+        margin-top: 0.8cm;
+        padding-top: 0.25cm;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>aulaCiencias</h1>
+    <p class="subtitle">Descripcion general del proyecto</p>
+
+    <div class="summary-box">
+      <p>
+        aulaCiencias es una plataforma web educativa para gestionar clases particulares de ciencias:
+        permite publicar materiales y temarios, recibir solicitudes de reserva, administrar alumnos,
+        horarios, pagos manuales y contenidos del sitio desde un panel privado.
+      </p>
+    </div>
+
+    <h2>Resumen</h2>
+    <p>
+      aulaCiencias es una aplicacion web full-stack pensada para una profesora particular de ciencias,
+      enfocada en centralizar la gestion de clases, reservas, alumnos y contenidos educativos. La
+      plataforma permite que estudiantes o familias consulten materiales, temarios y recursos publicos,
+      seleccionen temas de estudio, elijan modalidad de clase, fecha, horario y soliciten una reserva
+      que luego se confirma manualmente por WhatsApp o transferencia.
+    </p>
+
+    <h2>Experiencia publica</h2>
+    <p>
+      El sitio publico esta construido con React, Vite y TypeScript. Incluye secciones de materiales
+      descargables, temarios, materias, glosario educativo, colegios e instituciones, mapa y el flujo de
+      reserva "Te lo explica Silvi".
+    </p>
+    <ul>
+      <li>Consulta de materiales y recursos educativos visibles para estudiantes y familias.</li>
+      <li>Exploracion de temarios por materia, nivel, anio o trayecto educativo.</li>
+      <li>Solicitud de clases con seleccion de objetivos, modalidad, tipo de clase, fechas y horarios.</li>
+      <li>Resumen automatico de duracion estimada, monto y datos para continuar por WhatsApp.</li>
+    </ul>
+
+    <h2>Panel administrativo</h2>
+    <p>
+      El proyecto incluye un panel privado para gestionar el contenido y la operacion diaria. Desde ese
+      panel se pueden administrar reservas, alumnos, tutores, materias, temarios, horarios disponibles,
+      textos del sitio, configuracion visual, precios, cupos y seguridad.
+    </p>
+
+    <h2>Funcionamiento de reservas</h2>
+    <p>
+      El sistema calcula la duracion y el monto de cada solicitud segun la cantidad de temas, el precio
+      por hora y la configuracion de temas por hora. Tambien valida que el horario no sea pasado, controla
+      el cupo maximo por franja horaria y bloquea temporalmente los horarios con reserva pendiente para
+      evitar superposiciones.
+    </p>
+
+    <h2>Tecnologia</h2>
+    <ul>
+      <li><span class="tech">Frontend:</span> React, Vite y TypeScript.</li>
+      <li><span class="tech">Backend:</span> Node.js, Express y TypeScript.</li>
+      <li><span class="tech">Base de datos:</span> PostgreSQL con Drizzle ORM y migraciones SQL versionadas.</li>
+      <li><span class="tech">Autenticacion:</span> bcrypt, JWT en cookies httpOnly, validacion con Zod y roles administrativos.</li>
+      <li><span class="tech">Despliegue local:</span> Docker Compose con PostgreSQL y aplicacion servida en el puerto 8080.</li>
+    </ul>
+
+    <h2>Descripcion para presentacion</h2>
+    <p>
+      Desarrolle una aplicacion web integral para aulaCiencias, orientada a digitalizar la gestion de
+      clases particulares. El sistema combina una pagina publica con recursos educativos y solicitud de
+      turnos, junto con un panel administrativo para gestionar alumnos, reservas, materias, horarios,
+      contenidos, configuracion visual y seguimiento academico. Esta construida con React, TypeScript,
+      Node.js, Express, PostgreSQL y Docker.
+    </p>
+
+    <p class="footer">Documento generado para describir el proyecto AulaCiencias.</p>
+  </body>
+</html>

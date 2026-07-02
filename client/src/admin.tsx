@@ -160,8 +160,6 @@ interface Booking {
   totalTopics: number;
   totalAmount: string;
   paymentAlias: string | null;
-  mercadopagoPreferenceId: string | null;
-  mercadopagoPaymentId: string | null;
   googleCalendarEventId: string | null;
   montoSenia: string | null;
   paidAt: string | null;
@@ -179,7 +177,6 @@ interface Settings {
   pricePerHour: string;
   topicsPerHour: number;
   maxStudentsPerSlot: number;
-  mercadoPagoAlias: string | null;
   primaryColor: string;
   secondaryColor: string;
   accentColor: string;
@@ -294,7 +291,7 @@ export function AdminApp() {
         <section className="login-card">
           <p className="eyebrow">Panel privado</p>
           <h1>Acceso de administrador requerido</h1>
-          <p className="muted">Tu usuario está logueado, pero no tiene permisos para administrar aulaCiencias.</p>
+          <p className="muted">Tu usuario está logueado, pero no tiene permisos para administrar AulaCiencias.</p>
           <a className="primary-action" href="#inicio">Volver al sitio</a>
         </section>
       </main>
@@ -304,7 +301,7 @@ export function AdminApp() {
   return (
     <div className="admin-shell">
       <aside className="admin-sidebar">
-        <a className="brand" href="#inicio">aulaCiencias</a>
+        <a className="brand" href="#inicio">AulaCiencias</a>
         <p>{user.email}</p>
         <nav className="admin-nav" aria-label="Panel de administración">
           {tabs.map((item) => (
@@ -1177,10 +1174,12 @@ function BookingsAdmin() {
             <div>
               <strong>{booking.student.firstName} {booking.student.lastName}</strong>
               <span>{booking.selectedDate} · {booking.startTime}-{booking.endTime} · {booking.totalAmount}</span>
-              <span>{booking.status} · reserva: {booking.estadoReserva} · pago: {booking.estadoPago}</span>
+              <span>
+                {booking.status === "PENDING_PAYMENT" ? "PENDIENTE DE CONFIRMACIÓN" : booking.status}
+                {" · reserva: "}{booking.estadoReserva}
+                {booking.expiresAt && booking.status === "PENDING_PAYMENT" ? ` · vence ${new Date(booking.expiresAt).toLocaleTimeString("es-AR")}` : ""}
+              </span>
               {booking.bookingBatchId ? <span>Lote: {booking.bookingBatchId}</span> : null}
-              {booking.montoSenia ? <span>Seña: {booking.montoSenia}</span> : null}
-              {booking.mercadopagoPaymentId ? <span>Pago MP: {booking.mercadopagoPaymentId}</span> : null}
               {booking.googleCalendarEventId ? <span>Calendar: {booking.googleCalendarEventId}</span> : null}
               <span>
                 {[booking.modalidad, booking.tipoClase, booking.usaPackPromocional ? booking.packSeleccionado || "Pack" : null]
@@ -1193,9 +1192,18 @@ function BookingsAdmin() {
             <div className="row-actions">
               <a href={`/alumno/${booking.student.id}`} target="_blank" rel="noreferrer">Panel</a>
               <a href={`/familia/${booking.student.id}`} target="_blank" rel="noreferrer">Familia</a>
-              {["PAID", "CONFIRMED", "CANCELLED", "COMPLETED"].map((nextStatus) => (
-                <button key={nextStatus} type="button" onClick={() => changeStatus(booking.id, nextStatus)}>{nextStatus}</button>
-              ))}
+              {booking.status === "PENDING_PAYMENT" && (!booking.expiresAt || new Date(booking.expiresAt).getTime() > Date.now()) ? (
+                <button type="button" onClick={() => changeStatus(booking.id, "CONFIRMED")}>Confirmar transferencia y clase</button>
+              ) : null}
+              {booking.status === "PENDING_PAYMENT" && booking.expiresAt && new Date(booking.expiresAt).getTime() <= Date.now() ? (
+                <span>Reserva vencida: el horario ya fue liberado.</span>
+              ) : null}
+              {booking.status !== "CANCELLED" && booking.status !== "COMPLETED" ? (
+                <button type="button" onClick={() => changeStatus(booking.id, "CANCELLED")}>Cancelar</button>
+              ) : null}
+              {booking.status === "CONFIRMED" ? (
+                <button type="button" onClick={() => changeStatus(booking.id, "COMPLETED")}>Completar</button>
+              ) : null}
             </div>
           </article>
         ))}
@@ -1219,7 +1227,6 @@ function SettingsAdmin() {
       pricePerHour: textValue(form, "pricePerHour"),
       topicsPerHour: Number(form.get("topicsPerHour") || 1),
       maxStudentsPerSlot: Number(form.get("maxStudentsPerSlot") || 1),
-      mercadoPagoAlias: textValue(form, "mercadoPagoAlias"),
       primaryColor: String(form.get("primaryColor") || "#0f766e"),
       secondaryColor: String(form.get("secondaryColor") || "#1e293b"),
       accentColor: String(form.get("accentColor") || "#f59e0b"),
@@ -1253,7 +1260,6 @@ function SettingsAdmin() {
           <label>Precio por hora<input name="pricePerHour" required defaultValue={settings.pricePerHour} /></label>
           <label>Temas por hora<input name="topicsPerHour" type="number" min="1" required defaultValue={settings.topicsPerHour} /></label>
           <label>Alumnos por horario<input name="maxStudentsPerSlot" type="number" min="1" required defaultValue={settings.maxStudentsPerSlot} /></label>
-          <label>Alias Mercado Pago<input name="mercadoPagoAlias" defaultValue={settings.mercadoPagoAlias || ""} /></label>
 
           <h3>Colores</h3>
           <label>Color primario<input name="primaryColor" type="color" defaultValue={settings.primaryColor} /></label>

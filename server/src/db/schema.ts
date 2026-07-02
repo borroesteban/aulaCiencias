@@ -383,7 +383,7 @@ export const bookings = pgTable("bookings", {
     .references(() => students.id, { onDelete: "restrict" }),
   status: bookingStatus("status").notNull().default("PENDING_PAYMENT"),
   bookingBatchId: uuid("booking_batch_id"),
-  estadoReserva: text("estado_reserva").notNull().default("pendiente_pago"),
+  estadoReserva: text("estado_reserva").notNull().default("reserva_pendiente"),
   estadoPago: text("estado_pago").notNull().default("pendiente"),
   selectedDate: date("selected_date").notNull(),
   startTime: time("start_time").notNull(),
@@ -391,8 +391,6 @@ export const bookings = pgTable("bookings", {
   totalTopics: integer("total_topics").notNull().default(0),
   totalAmount: numeric("total_amount", { precision: 12, scale: 2 }).notNull().default("0"),
   paymentAlias: text("payment_alias"),
-  mercadopagoPreferenceId: text("mercadopago_preference_id"),
-  mercadopagoPaymentId: text("mercadopago_payment_id"),
   googleCalendarEventId: text("google_calendar_event_id"),
   montoSenia: numeric("monto_senia", { precision: 12, scale: 2 }),
   paidAt: timestamp("paid_at", { withTimezone: true }),
@@ -499,26 +497,11 @@ export const studentFamilySummaries = pgTable("student_family_summaries", {
   updatedAt: updatedAtColumn(),
 });
 
-export const bookingPayments = pgTable("booking_payments", {
-  id: idColumn(),
-  bookingBatchId: uuid("booking_batch_id").notNull(),
-  status: text("status").notNull().default("pending"),
-  provider: text("provider").notNull().default("mercadopago"),
-  preferenceId: text("preference_id"),
-  paymentId: text("payment_id"),
-  externalReference: text("external_reference"),
-  amount: numeric("amount", { precision: 12, scale: 2 }),
-  rawPayload: jsonb("raw_payload").$type<Record<string, unknown> | null>(),
-  createdAt: createdAtColumn(),
-  updatedAt: updatedAtColumn(),
-});
-
 export const appSettings = pgTable("app_settings", {
   id: idColumn(),
   pricePerHour: numeric("price_per_hour", { precision: 12, scale: 2 }).notNull().default("0"),
   topicsPerHour: integer("topics_per_hour").notNull().default(1),
   maxStudentsPerSlot: integer("max_students_per_slot").notNull().default(1),
-  mercadoPagoAlias: text("mercado_pago_alias"),
   primaryColor: text("primary_color").notNull().default("#000000"),
   secondaryColor: text("secondary_color").notNull().default("#000000"),
   accentColor: text("accent_color").notNull().default("#000000"),
